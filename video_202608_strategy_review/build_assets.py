@@ -64,17 +64,19 @@ PUBLIC_STRATEGIES = [
 ]
 
 SCENES = [
-    ("01-封面与钩子.png", 25),
-    ("02-交易体系全貌.png", 32),
-    ("03-统一比较口径.png", 25),
-    ("04-最近六个月总览.png", 35),
-    ("05-策略分工.png", 35),
-    ("06-V8风险复盘.png", 45),
-    ("07-小票逆风.png", 30),
-    ("08-最近一年对照.png", 30),
-    ("09-最近三年对照.png", 40),
-    ("10-体系四原则.png", 38),
-    ("11-结尾与关注.png", 25),
+    ("01-真实账户近一年.png", 30),
+    ("02-个人经历时间线.png", 55),
+    ("03-从主观到规则.png", 45),
+    ("04-交易体系全貌.png", 35),
+    ("05-统一比较口径.png", 30),
+    ("06-最近六个月总览.png", 40),
+    ("07-策略分工.png", 35),
+    ("08-V8风险复盘.png", 45),
+    ("09-小票逆风.png", 30),
+    ("10-最近一年对照.png", 35),
+    ("11-最近三年对照.png", 40),
+    ("12-体系四原则.png", 35),
+    ("13-结尾与关注.png", 25),
 ]
 
 
@@ -135,9 +137,9 @@ def header(draw: ImageDraw.ImageDraw, kicker: str, title: str, subtitle: str | N
         draw.text((92, 166), subtitle, font=font(25), fill=MUTED)
 
 
-def footer(draw: ImageDraw.ImageDraw, scene_no: int) -> None:
+def footer(draw: ImageDraw.ImageDraw, scene_no: int, note: str = "当前规则净值复盘｜共同截止 2026-07-28") -> None:
     draw.line((90, 1026, 1830, 1026), fill=BORDER, width=2)
-    draw.text((90, 1040), "当前规则净值复盘｜共同截止 2026-07-28", font=font(17), fill=MUTED)
+    draw.text((90, 1040), note, font=font(17), fill=MUTED)
     draw.text((1760, 1040), f"{scene_no:02d}/{len(SCENES):02d}", font=font(17, True), fill=MUTED)
 
 
@@ -254,32 +256,94 @@ def pct(value: float) -> str:
     return f"{value:+.2%}"
 
 
-def build_cover(nav6: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Image.Image:
+def build_account_intro() -> Image.Image:
     image, draw = canvas()
-    draw.text((90, 70), "半年复盘", font=font(26, True), fill=RED)
-    paragraph(draw, (90, 118), "我为什么不再寻找\n一套万能策略", font(76, True), INK, 760, 14)
-    paragraph(
-        draw,
-        (94, 340),
-        "五套当前规则，同一起点、同样本金。\n看收益，也看为了收益付出的路径。",
-        font(29),
-        MUTED,
-        700,
-        16,
-    )
-    chart = chart_image(nav6, (920, 610), columns=["GAR", "V8"], legend=True, highlight_v8=True)
-    image.paste(chart, (900, 120))
+    header(draw, "真实账户", "先把近一年成绩放在前面", "2025-07-31 至 2026-07-31｜账户汇总口径")
+    card(draw, (90, 255, 900, 850), fill=PAPER)
+    draw.text((135, 305), "近一年收益", font=font(28, True), fill=MUTED)
+    draw.text((135, 370), "+2.70%", font=font(112, True), fill=RED)
+    draw.text((140, 515), "期间一度", font=font(24), fill=MUTED)
+    draw.text((140, 555), "+21.18%", font=font(50, True), fill=INK)
+    draw.line((135, 650, 855, 650), fill=BORDER, width=2)
+    paragraph(draw, (135, 690), "收益最终回吐了大部分。\n这不是一份漂亮答卷。", font(27, True), INK, 690, 14)
 
-    card(draw, (90, 610, 840, 895), fill=PAPER)
-    draw.text((125, 650), "一个有意制造的反差", font=font(27, True), fill=INK)
-    draw.text((125, 710), "V8", font=font(28, True), fill=RED)
-    draw.text((225, 700), "+44.92%", font=font(44, True), fill=RED)
-    draw.text((455, 712), "峰值", font=font(21), fill=MUTED)
-    draw.text((125, 770), "期末", font=font(22), fill=MUTED)
-    draw.text((225, 758), pct(metric(metrics, "6m", "V8", "return")), font=font(42, True), fill=INK)
-    draw.text((455, 770), "最大回撤", font=font(22), fill=MUTED)
-    draw.text((620, 758), pct(metric(metrics, "6m", "V8", "max_drawdown")), font=font(42, True), fill=RED)
-    footer(draw, 1)
+    card(draw, (965, 255, 1830, 850), fill=PAPER)
+    draw.text((1015, 305), "同期比较", font=font(28, True), fill=INK)
+    comparisons = [
+        ("真实账户", "+2.70%", RED),
+        ("上证指数", "+5.99%", BLUE),
+        ("相对表现", "-3.29 pct", GREEN),
+    ]
+    for idx, (label, value, color) in enumerate(comparisons):
+        y = 400 + idx * 130
+        draw.text((1020, y), label, font=font(26), fill=MUTED)
+        draw.text((1745, y - 12), value, font=font(48, True), fill=color, anchor="ra")
+        if idx < 2:
+            draw.line((1020, y + 75, 1775, y + 75), fill=BORDER, width=2)
+
+    card(draw, (90, 885, 1830, 985), fill="#FFF8E9", outline="#E7C574")
+    draw.text((130, 915), "正因为成绩普通，我更想讲清楚：为什么体系比一次判断重要。", font=font(28, True), fill=INK)
+    footer(draw, 1, "真实账户收益｜账户汇总统计")
+    return image
+
+
+def build_journey() -> Image.Image:
+    image, draw = canvas()
+    header(draw, "自我介绍", "一个普通投资者的八年", "入市时间不短，真正开始建立体系却很晚")
+    items = [
+        ("2018", "开始入市", "小打小闹地参与市场", BLUE),
+        ("2020", "场外基金", "基本满仓留在市场里", PURPLE),
+        ("买房", "资金重置", "绝大部分积蓄投入住房", AMBER),
+        ("2024·9.24 后", "场内 + 场外", "开始并行两种投资渠道", GREEN),
+        ("近一年半", "从零搭策略", "回测、实盘、推翻、改进", RED),
+        ("近三四个月", "体系逐渐成形", "多策略框架开始稳定", ORANGE),
+    ]
+    for idx, (time_label, title, desc, color) in enumerate(items):
+        col, row = idx % 3, idx // 3
+        x = 90 + col * 590
+        y = 255 + row * 300
+        card(draw, (x, y, x + 540, y + 240), fill=PAPER)
+        draw.rectangle((x, y, x + 540, y + 10), fill=color)
+        draw.text((x + 32, y + 35), time_label, font=font(24, True), fill=color)
+        draw.text((x + 32, y + 88), title, font=font(34, True), fill=INK)
+        draw.text((x + 32, y + 158), desc, font=font(23), fill=MUTED)
+    card(draw, (90, 875, 1830, 985), fill="#FFF8E9", outline="#E7C574")
+    draw.text((130, 910), "入市八年，不等于真正懂投资八年。", font=font(30, True), fill=INK)
+    draw.text((875, 914), "过去更像是在行情里被动漂流。", font=font(26, True), fill=AMBER)
+    footer(draw, 2, "个人投资经历｜2018 至今")
+    return image
+
+
+def build_turning_point() -> Image.Image:
+    image, draw = canvas()
+    header(draw, "认知转折", "我承认：主观投资没有天赋", "大约一年半前，决定把每个投资动作变成可验证的规则")
+    card(draw, (90, 265, 785, 835), fill=PAPER)
+    draw.text((135, 310), "过去", font=font(27, True), fill=RED)
+    draw.text((135, 365), "被市场牵着走", font=font(40, True), fill=INK)
+    old_items = ["消息裹挟", "涨了兴奋", "跌了恐慌", "追涨杀跌", "主观择时"]
+    x, y = 135, 465
+    for idx, value in enumerate(old_items):
+        width = pill(draw, (x, y), value, "#8A9399")
+        x += width + 18
+        if idx == 2:
+            x, y = 135, 545
+    paragraph(draw, (135, 660), "每次都以为自己在判断，\n回头看只是被波动推动。", font(27), MUTED, 580, 16)
+
+    draw.line((825, 545, 995, 545), fill=BORDER, width=7)
+    draw.polygon([(995, 545), (955, 520), (955, 570)], fill=BORDER)
+    draw.text((850, 470), "一年半前", font=font(24, True), fill=AMBER)
+
+    card(draw, (1035, 265, 1830, 835), fill=PAPER)
+    draw.text((1080, 310), "现在", font=font(27, True), fill=GREEN)
+    draw.text((1080, 365), "让规则替代感觉", font=font(40, True), fill=INK)
+    new_items = ["从零回测", "小规模实盘", "推翻假设", "修正逻辑", "再次验证"]
+    for idx, value in enumerate(new_items):
+        y = 455 + idx * 62
+        draw.text((1090, y), f"{idx + 1:02d}", font=font(22, True), fill=GREEN)
+        draw.text((1160, y - 4), value, font=font(29, True), fill=INK)
+    card(draw, (90, 875, 1830, 985), fill="#FFF8E9", outline="#E7C574")
+    draw.text((130, 910), "目标不是预测每次涨跌，而是让每个动作有规则、有证据、可复盘。", font=font(29, True), fill=INK)
+    footer(draw, 3, "投资方法转变｜从主观判断到规则体系")
     return image
 
 
@@ -303,13 +367,13 @@ def build_system() -> Image.Image:
     card(draw, (90, 870, 1830, 975), fill="#FFF8E9", outline="#E7C574")
     draw.text((130, 903), "关注：策略分工、收益路径、风险代价、复盘修正", font=font(24, True), fill=INK)
     draw.text((1050, 903), "目标：经得起不同窗口检验", font=font(24, True), fill=AMBER)
-    footer(draw, 2)
+    footer(draw, 4)
     return image
 
 
 def build_method() -> Image.Image:
     image, draw = canvas()
-    header(draw, "比较方法", "先把起跑线拉齐", "不比较建仓早晚，只比较当前规则本身")
+    header(draw, "比较方法", "先把两种收益口径分开", "真实账户回答我赚了多少；规则净值回答策略走得怎样")
     steps = [
         ("01", "同一日期", "2026-01-28", BLUE),
         ("02", "同样本金", "每套 = 100", GREEN),
@@ -340,7 +404,7 @@ def build_method() -> Image.Image:
         1580,
         12,
     )
-    footer(draw, 3)
+    footer(draw, 5)
     return image
 
 
@@ -359,7 +423,7 @@ def build_six_month(nav6: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Ima
         draw.text((x + 20, 900), ret, font=font(32, True), fill=COLORS[name])
         draw.text((x + 175, 910), f"回撤 {mdd}", font=font(19), fill=MUTED)
         x += 352
-    footer(draw, 4)
+    footer(draw, 6)
     return image
 
 
@@ -402,7 +466,7 @@ def build_roles(metrics: dict[str, pd.DataFrame]) -> Image.Image:
         draw.text((x + 292, 680), mdd, font=font(42, True), fill=INK)
         notes = {"GAR": "回撤最浅", "trio": "半年横盘", "豆粕动量": "半年收益最高"}
         pill(draw, (x + 34, 790), notes[name], color)
-    footer(draw, 5)
+    footer(draw, 7)
     return image
 
 
@@ -430,7 +494,7 @@ def build_v8(nav6: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Image.Imag
         11,
     )
     draw.text((90, 930), "结论：旧数据没有错，但旧风险上限已经失效。", font=font(27, True), fill=INK)
-    footer(draw, 6)
+    footer(draw, 8)
     return image
 
 
@@ -462,7 +526,7 @@ def build_smallcap(nav6: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Imag
         12,
     )
     draw.text((90, 910), "“策略处于逆风”与“策略已经失效”不是同一个结论。", font=font(29, True), fill=INK)
-    footer(draw, 7)
+    footer(draw, 9)
     return image
 
 
@@ -486,7 +550,7 @@ def build_one_year(nav1: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Imag
     draw.line((1255, 855, 1795, 855), fill=BORDER, width=2)
     draw.text((1260, 870), "收益：豆粕｜效率：trio｜防守：GAR", font=font(22, True), fill=INK)
     draw.text((90, 930), "收益冠军、风险效率、最浅回撤，并不属于同一套策略。", font=font(28, True), fill=INK)
-    footer(draw, 8)
+    footer(draw, 10)
     return image
 
 
@@ -526,7 +590,7 @@ def build_three_year(metrics: dict[str, pd.DataFrame]) -> Image.Image:
         font=font(23, True),
         fill=INK,
     )
-    footer(draw, 9)
+    footer(draw, 11)
     return image
 
 
@@ -549,14 +613,14 @@ def build_principles() -> Image.Image:
         draw.text((x + 105, y + 28), title, font=font(36, True), fill=INK)
         paragraph(draw, (x + 35, y + 110), desc, font(25), MUTED, 740, 15)
         draw.rectangle((x + 35, y + 245, x + 160, y + 254), fill=color)
-    footer(draw, 10)
+    footer(draw, 12)
     return image
 
 
 def build_end() -> Image.Image:
     image, draw = canvas()
     draw.text((90, 85), "下一阶段", font=font(26, True), fill=RED)
-    paragraph(draw, (90, 135), "不只晒收益，\n继续验证、复盘与修正", font(68, True), INK, 1250, 16)
+    paragraph(draw, (90, 135), "收益普通，\n继续验证、复盘与修正", font(68, True), INK, 1250, 16)
     paragraph(
         draw,
         (94, 345),
@@ -577,8 +641,8 @@ def build_end() -> Image.Image:
         draw.text((x + 35, 635), title, font=font(34, True), fill=INK)
         paragraph(draw, (x + 35, 700), desc, font(24), MUTED, 445, 12)
         x += 570
-    draw.text((90, 910), "关注的不是一张漂亮曲线，而是一套体系如何被持续验证。", font=font(31, True), fill=RED)
-    footer(draw, 11)
+    draw.text((90, 910), "记录的不是一张漂亮曲线，而是一个普通投资者如何建立自己的体系。", font=font(29, True), fill=RED)
+    footer(draw, 13)
     return image
 
 
@@ -627,7 +691,9 @@ def main() -> None:
     nav3 = normalized_window(nav, pd.DateOffset(years=3))
 
     images = [
-        build_cover(nav6, metrics),
+        build_account_intro(),
+        build_journey(),
+        build_turning_point(),
         build_system(),
         build_method(),
         build_six_month(nav6, metrics),
@@ -645,7 +711,7 @@ def main() -> None:
 
     export_data(nav6, nav1, nav3, metrics)
     manifest = {
-        "title": "半年复盘：我为什么不再寻找一套万能策略",
+        "title": "近一年只赚 2.70%：一个普通投资者的交易体系复盘",
         "resolution": [W, H],
         "target_duration_seconds": sum(duration for _, duration in SCENES),
         "scenes": [
@@ -653,7 +719,7 @@ def main() -> None:
             for name, duration in SCENES
         ],
         "data_common_end": str(nav.index[-1].date()),
-        "scope": "current-rule theoretical NAV; equal start date and equal notional",
+        "scope": "real-account one-year summary plus current-rule theoretical NAV comparison",
     }
     (ROOT / "asset_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),

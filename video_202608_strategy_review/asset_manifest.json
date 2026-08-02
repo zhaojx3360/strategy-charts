@@ -1,56 +1,64 @@
 {
-  "title": "半年复盘：我为什么不再寻找一套万能策略",
+  "title": "近一年只赚 2.70%：一个普通投资者的交易体系复盘",
   "resolution": [
     1920,
     1080
   ],
-  "target_duration_seconds": 360,
+  "target_duration_seconds": 480,
   "scenes": [
     {
-      "file": "assets/01-封面与钩子.png",
-      "duration_seconds": 25
+      "file": "assets/01-真实账户近一年.png",
+      "duration_seconds": 30
     },
     {
-      "file": "assets/02-交易体系全貌.png",
-      "duration_seconds": 32
+      "file": "assets/02-个人经历时间线.png",
+      "duration_seconds": 55
     },
     {
-      "file": "assets/03-统一比较口径.png",
-      "duration_seconds": 25
-    },
-    {
-      "file": "assets/04-最近六个月总览.png",
-      "duration_seconds": 35
-    },
-    {
-      "file": "assets/05-策略分工.png",
-      "duration_seconds": 35
-    },
-    {
-      "file": "assets/06-V8风险复盘.png",
+      "file": "assets/03-从主观到规则.png",
       "duration_seconds": 45
     },
     {
-      "file": "assets/07-小票逆风.png",
+      "file": "assets/04-交易体系全貌.png",
+      "duration_seconds": 35
+    },
+    {
+      "file": "assets/05-统一比较口径.png",
       "duration_seconds": 30
     },
     {
-      "file": "assets/08-最近一年对照.png",
-      "duration_seconds": 30
-    },
-    {
-      "file": "assets/09-最近三年对照.png",
+      "file": "assets/06-最近六个月总览.png",
       "duration_seconds": 40
     },
     {
-      "file": "assets/10-体系四原则.png",
-      "duration_seconds": 38
+      "file": "assets/07-策略分工.png",
+      "duration_seconds": 35
     },
     {
-      "file": "assets/11-结尾与关注.png",
+      "file": "assets/08-V8风险复盘.png",
+      "duration_seconds": 45
+    },
+    {
+      "file": "assets/09-小票逆风.png",
+      "duration_seconds": 30
+    },
+    {
+      "file": "assets/10-最近一年对照.png",
+      "duration_seconds": 35
+    },
+    {
+      "file": "assets/11-最近三年对照.png",
+      "duration_seconds": 40
+    },
+    {
+      "file": "assets/12-体系四原则.png",
+      "duration_seconds": 35
+    },
+    {
+      "file": "assets/13-结尾与关注.png",
       "duration_seconds": 25
     }
   ],
   "data_common_end": "2026-07-28",
-  "scope": "current-rule theoretical NAV; equal start date and equal notional"
+  "scope": "real-account one-year summary plus current-rule theoretical NAV comparison"
 }
