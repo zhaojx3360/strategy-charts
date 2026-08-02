@@ -104,7 +104,7 @@ def scene_filter(index: int, filename: str, duration: float) -> str:
     return f"[{index}:v]" + ",".join(filters) + f"[scene{index}]"
 
 
-def build_filter_graph(scenes: list[dict[str, object]]) -> str:
+def build_filter_graph(scenes: list[dict[str, object]], speed: float) -> str:
     chains = [
         scene_filter(index, Path(str(scene["file"])).name, float(scene["duration_seconds"]))
         for index, scene in enumerate(scenes)
@@ -119,7 +119,8 @@ def build_filter_graph(scenes: list[dict[str, object]]) -> str:
         )
         current = output
         elapsed += float(scenes[index]["duration_seconds"])
-    chains.append(f"[{current}]fps={FPS},format=yuv420p[vout]")
+    chains.append(f"[{current}]setpts=PTS/{speed:.6f},fps={FPS},format=yuv420p[vout]")
+    chains.append(f"[{len(scenes)}:a]atempo={speed:.6f}[aout]")
     return ";".join(chains)
 
 
@@ -129,6 +130,7 @@ def render(
     output: Path,
     encoder: str,
     preview_seconds: float | None,
+    speed: float,
 ) -> None:
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     command = [ffmpeg, "-hide_banner", "-y"]
@@ -138,12 +140,12 @@ def render(
         command.extend(
             ["-loop", "1", "-framerate", str(FPS), "-t", f"{duration:.3f}", "-i", str(image_path)]
         )
-    command.extend(["-i", str(audio), "-filter_complex", build_filter_graph(scenes)])
-    command.extend(["-map", "[vout]", "-map", f"{len(scenes)}:a:0"])
+    command.extend(["-i", str(audio), "-filter_complex", build_filter_graph(scenes, speed)])
+    command.extend(["-map", "[vout]", "-map", "[aout]"])
     if preview_seconds is not None:
         command.extend(["-t", f"{preview_seconds:.3f}"])
     else:
-        command.extend(["-t", f"{audio_duration(audio):.3f}"])
+        command.extend(["-t", f"{audio_duration(audio) / speed:.3f}"])
     if encoder == "qsv":
         command.extend(
             [
@@ -185,11 +187,22 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, default=ROOT / "asset_manifest.json")
     parser.add_argument("--encoder", choices=("qsv", "x264"), default="qsv")
     parser.add_argument("--preview-seconds", type=float)
+    parser.add_argument("--speed", type=float, default=1.0)
     args = parser.parse_args()
+
+    if not 0.5 <= args.speed <= 2.0:
+        parser.error("--speed must be between 0.5 and 2.0")
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     scenes = manifest["scenes"]
-    render(scenes, args.audio.resolve(), args.output.resolve(), args.encoder, args.preview_seconds)
+    render(
+        scenes,
+        args.audio.resolve(),
+        args.output.resolve(),
+        args.encoder,
+        args.preview_seconds,
+        args.speed,
+    )
 
 
 if __name__ == "__main__":
