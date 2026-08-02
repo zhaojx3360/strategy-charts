@@ -74,10 +74,26 @@ SCENES = [
     ("07-策略分工.png", 35),
     ("08-V8风险复盘.png", 45),
     ("09-小票逆风.png", 30),
-    ("10-最近一年对照.png", 35),
+    ("10-三年组合对比.png", 35),
     ("11-最近三年对照.png", 40),
     ("12-体系四原则.png", 35),
     ("13-结尾与关注.png", 25),
+]
+
+# Recommended playback order for the 08:11 narration edit. The V8 and small-cap
+# deep dives remain available as source cards but are intentionally left out.
+FINAL_EDIT = [
+    ("01-真实账户近一年.png", 54),
+    ("02-个人经历时间线.png", 79),
+    ("03-从主观到规则.png", 65),
+    ("04-交易体系全貌.png", 37),
+    ("05-统一比较口径.png", 19),
+    ("11-最近三年对照.png", 17),
+    ("10-三年组合对比.png", 14),
+    ("06-最近六个月总览.png", 48),
+    ("07-策略分工.png", 46),
+    ("12-体系四原则.png", 52),
+    ("13-结尾与关注.png", 60),
 ]
 
 
@@ -266,6 +282,33 @@ def chart_image(
     plt.close(fig)
     buffer.seek(0)
     return Image.open(buffer).convert("RGB").resize(size, Image.Resampling.LANCZOS)
+
+
+def load_portfolio_compare(path: Path) -> pd.DataFrame:
+    frame = pd.read_csv(path, encoding="utf-8-sig", index_col=0)
+    frame.index = pd.to_datetime(frame.index)
+    required = ["当前组合", "中证500"]
+    if not set(required).issubset(frame.columns):
+        raise ValueError(f"Portfolio comparison must contain columns: {required}")
+    frame = frame[required].astype(float).sort_index().ffill().dropna()
+    return frame.div(frame.iloc[0]) * 100.0
+
+
+def comparison_metrics(series: pd.Series) -> dict[str, float]:
+    nav = series.dropna().astype(float)
+    daily = nav.pct_change().dropna()
+    years = (nav.index[-1] - nav.index[0]).days / 365.25
+    total_return = float(nav.iloc[-1] / nav.iloc[0] - 1.0)
+    annualized = float((1.0 + total_return) ** (1.0 / years) - 1.0)
+    max_drawdown = float((nav / nav.cummax() - 1.0).min())
+    volatility = float(daily.std())
+    sharpe = float(daily.mean() / volatility * (252**0.5)) if volatility > 0 else float("nan")
+    return {
+        "return": total_return,
+        "annualized": annualized,
+        "max_drawdown": max_drawdown,
+        "sharpe": sharpe,
+    }
 
 
 def metric(metrics: dict[str, pd.DataFrame], window: str, strategy: str, field: str) -> float:
@@ -572,6 +615,67 @@ def build_one_year(nav1: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Imag
     return image
 
 
+def build_portfolio_compare(compare: pd.DataFrame) -> Image.Image:
+    image, draw = canvas()
+    header(
+        draw,
+        "最近三年组合",
+        "当前组合 vs 中证500",
+        f"{compare.index[0].date()} = 100｜当前规则｜半年再平衡",
+    )
+
+    dpi = 120
+    size = (1740, 590)
+    fig, ax = plt.subplots(figsize=(size[0] / dpi, size[1] / dpi), dpi=dpi)
+    fig.patch.set_facecolor(BG)
+    ax.set_facecolor(BG)
+    lines = [("当前组合", RED, 3.2), ("中证500", BLUE, 2.5)]
+    for name, color, width in lines:
+        ax.plot(compare.index, compare[name], color=color, lw=width, label=name)
+    ax.axhline(100, color="#9AA19D", lw=1.2, ls="--")
+    ax.grid(axis="y", color="#DDE1DE", lw=0.8)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.spines["bottom"].set_color("#AAB1AD")
+    ax.tick_params(axis="both", labelsize=14, colors=INK, length=0)
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=4, maxticks=7))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+    legend_font = MPL_FONT.copy()
+    legend_font.set_size(14)
+    ax.legend(loc="upper left", frameon=False, prop=legend_font)
+    fig.tight_layout(pad=0.8)
+    buffer = BytesIO()
+    fig.savefig(buffer, format="png", dpi=dpi, facecolor=BG)
+    plt.close(fig)
+    buffer.seek(0)
+    chart = Image.open(buffer).convert("RGB").resize(size, Image.Resampling.LANCZOS)
+    image.paste(chart, (90, 210))
+
+    for index, (name, color, _) in enumerate(lines):
+        values = comparison_metrics(compare[name])
+        x = 90 + index * 880
+        card(draw, (x, 825, x + 830, 985), fill=PAPER)
+        draw.rectangle((x, 825, x + 830, 836), fill=color)
+        draw.text((x + 28, 855), name, font=font(25, True), fill=INK)
+        stats = [
+            ("累计", pct(values["return"])),
+            ("年化", pct(values["annualized"])),
+            ("最大回撤", pct(values["max_drawdown"])),
+        ]
+        for stat_index, (label, value) in enumerate(stats):
+            stat_x = x + 215 + stat_index * 205
+            draw.text((stat_x, 852), label, font=font(18), fill=MUTED)
+            draw.text((stat_x, 892), value, font=font(29, True), fill=color if stat_index < 2 else INK)
+
+    draw.text(
+        (95, 995),
+        "未形成统一规则净值的部分按现金占位。",
+        font=font(18),
+        fill=MUTED,
+    )
+    footer(draw, 10, "当前目标配置的理论组合｜不等于真实账户收益")
+    return image
+
+
 def build_three_year(metrics: dict[str, pd.DataFrame]) -> Image.Image:
     image, draw = canvas()
     header(draw, "最近三年", "更长窗口提高说服力，也更需要解释样本", "2023-07-28 至 2026-07-28｜统一起点、统一规则")
@@ -701,12 +805,19 @@ def main() -> None:
         type=Path,
         help="Optional private comparison-output directory used to refresh the public CSV files.",
     )
+    parser.add_argument(
+        "--portfolio-compare",
+        type=Path,
+        required=True,
+        help="Private two-column aggregate curve: current portfolio and CSI 500.",
+    )
     args = parser.parse_args()
     ASSET_DIR.mkdir(parents=True, exist_ok=True)
     nav, metrics = load_data(args.source_dir)
     nav6 = normalized_window(nav, pd.DateOffset(months=6))
     nav1 = normalized_window(nav, pd.DateOffset(years=1))
     nav3 = normalized_window(nav, pd.DateOffset(years=3))
+    portfolio_compare = load_portfolio_compare(args.portfolio_compare)
 
     images = [
         build_account_intro(),
@@ -718,7 +829,7 @@ def main() -> None:
         build_roles(metrics),
         build_v8(nav6, metrics),
         build_smallcap(nav6, metrics),
-        build_one_year(nav1, metrics),
+        build_portfolio_compare(portfolio_compare),
         build_three_year(metrics),
         build_principles(),
         build_end(),
@@ -731,11 +842,12 @@ def main() -> None:
     manifest = {
         "title": "近一年只赚 2.70%：一个普通投资者的交易体系复盘",
         "resolution": [W, H],
-        "target_duration_seconds": sum(duration for _, duration in SCENES),
+        "target_duration_seconds": sum(duration for _, duration in FINAL_EDIT),
         "scenes": [
             {"file": f"assets/{name}", "duration_seconds": duration}
-            for name, duration in SCENES
+            for name, duration in FINAL_EDIT
         ],
+        "source_assets": [f"assets/{name}" for name, _ in SCENES],
         "data_common_end": str(nav.index[-1].date()),
         "scope": "real-account one-year summary plus current-rule theoretical NAV comparison",
     }
