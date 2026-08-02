@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parent
 ASSET_DIR = ROOT / "assets"
 DATA_DIR = ROOT / "data"
+SOURCE_DIR = ROOT / "source"
 NAV_PATH = DATA_DIR / "统一规则净值_最近三年.csv"
 METRIC_PATHS = {
     "6m": DATA_DIR / "策略指标_最近六个月.csv",
@@ -128,6 +129,25 @@ def paragraph(
 
 def card(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], fill=PAPER, outline=BORDER) -> None:
     draw.rounded_rectangle(box, radius=8, fill=fill, outline=outline, width=2)
+
+
+def paste_screenshot(
+    image: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    path: Path,
+    box: tuple[int, int, int, int],
+) -> None:
+    card(draw, box, fill=PAPER)
+    x1, y1, x2, y2 = box
+    screenshot = Image.open(path).convert("RGB")
+    max_width = x2 - x1 - 36
+    max_height = y2 - y1 - 36
+    scale = min(max_width / screenshot.width, max_height / screenshot.height)
+    size = (int(screenshot.width * scale), int(screenshot.height * scale))
+    screenshot = screenshot.resize(size, Image.Resampling.LANCZOS)
+    x = x1 + (x2 - x1 - size[0]) // 2
+    y = y1 + (y2 - y1 - size[1]) // 2
+    image.paste(screenshot, (x, y))
 
 
 def header(draw: ImageDraw.ImageDraw, kicker: str, title: str, subtitle: str | None = None) -> None:
@@ -259,30 +279,28 @@ def pct(value: float) -> str:
 def build_account_intro() -> Image.Image:
     image, draw = canvas()
     header(draw, "真实账户", "先把近一年成绩放在前面", "2025-07-31 至 2026-07-31｜账户汇总口径")
-    card(draw, (90, 255, 900, 850), fill=PAPER)
+    card(draw, (90, 255, 1285, 575), fill=PAPER)
     draw.text((135, 305), "近一年收益", font=font(28, True), fill=MUTED)
-    draw.text((135, 370), "+2.70%", font=font(112, True), fill=RED)
-    draw.text((140, 515), "期间一度", font=font(24), fill=MUTED)
-    draw.text((140, 555), "+21.18%", font=font(50, True), fill=INK)
-    draw.line((135, 650, 855, 650), fill=BORDER, width=2)
-    paragraph(draw, (135, 690), "收益最终回吐了大部分。\n这不是一份漂亮答卷。", font(27, True), INK, 690, 14)
+    draw.text((135, 355), "+2.70%", font=font(104, True), fill=RED)
+    draw.text((750, 315), "期间一度", font=font(24), fill=MUTED)
+    draw.text((750, 365), "+21.18%", font=font(54, True), fill=INK)
+    draw.text((750, 445), "收益最终回吐了大部分", font=font(24, True), fill=MUTED)
 
-    card(draw, (965, 255, 1830, 850), fill=PAPER)
-    draw.text((1015, 305), "同期比较", font=font(28, True), fill=INK)
+    card(draw, (90, 610, 1285, 845), fill=PAPER)
+    draw.text((135, 650), "同期比较", font=font(27, True), fill=INK)
     comparisons = [
         ("真实账户", "+2.70%", RED),
         ("上证指数", "+5.99%", BLUE),
         ("相对表现", "-3.29 pct", GREEN),
     ]
     for idx, (label, value, color) in enumerate(comparisons):
-        y = 400 + idx * 130
-        draw.text((1020, y), label, font=font(26), fill=MUTED)
-        draw.text((1745, y - 12), value, font=font(48, True), fill=color, anchor="ra")
-        if idx < 2:
-            draw.line((1020, y + 75, 1775, y + 75), fill=BORDER, width=2)
+        x = 135 + idx * 375
+        draw.text((x, 710), label, font=font(23), fill=MUTED)
+        draw.text((x, 755), value, font=font(42, True), fill=color)
 
-    card(draw, (90, 885, 1830, 985), fill="#FFF8E9", outline="#E7C574")
-    draw.text((130, 915), "正因为成绩普通，我更想讲清楚：为什么体系比一次判断重要。", font=font(28, True), fill=INK)
+    card(draw, (90, 880, 1285, 985), fill="#FFF8E9", outline="#E7C574")
+    paragraph(draw, (130, 910), "正因为成绩普通，我更想讲清楚：\n为什么体系比一次判断重要。", font(26, True), INK, 1080, 10)
+    paste_screenshot(image, draw, SOURCE_DIR / "真实账户近一年.jpg", (1360, 65, 1830, 1000))
     footer(draw, 1, "真实账户收益｜账户汇总统计")
     return image
 
@@ -299,17 +317,17 @@ def build_journey() -> Image.Image:
         ("近三四个月", "体系逐渐成形", "多策略框架开始稳定", ORANGE),
     ]
     for idx, (time_label, title, desc, color) in enumerate(items):
-        col, row = idx % 3, idx // 3
-        x = 90 + col * 590
-        y = 255 + row * 300
-        card(draw, (x, y, x + 540, y + 240), fill=PAPER)
-        draw.rectangle((x, y, x + 540, y + 10), fill=color)
-        draw.text((x + 32, y + 35), time_label, font=font(24, True), fill=color)
-        draw.text((x + 32, y + 88), title, font=font(34, True), fill=INK)
-        draw.text((x + 32, y + 158), desc, font=font(23), fill=MUTED)
-    card(draw, (90, 875, 1830, 985), fill="#FFF8E9", outline="#E7C574")
-    draw.text((130, 910), "入市八年，不等于真正懂投资八年。", font=font(30, True), fill=INK)
-    draw.text((875, 914), "过去更像是在行情里被动漂流。", font=font(26, True), fill=AMBER)
+        col, row = idx % 2, idx // 2
+        x = 90 + col * 600
+        y = 245 + row * 205
+        card(draw, (x, y, x + 550, y + 170), fill=PAPER)
+        draw.rectangle((x, y, x + 550, y + 9), fill=color)
+        draw.text((x + 28, y + 28), time_label, font=font(21, True), fill=color)
+        draw.text((x + 28, y + 68), title, font=font(29, True), fill=INK)
+        draw.text((x + 28, y + 123), desc, font=font(20), fill=MUTED)
+    card(draw, (90, 875, 1240, 985), fill="#FFF8E9", outline="#E7C574")
+    paragraph(draw, (130, 905), "入市八年，不等于真正懂投资八年。\n过去更像是在行情里被动漂流。", font(26, True), INK, 1040, 10)
+    paste_screenshot(image, draw, SOURCE_DIR / "历年收益记录.jpg", (1360, 65, 1830, 1000))
     footer(draw, 2, "个人投资经历｜2018 至今")
     return image
 
