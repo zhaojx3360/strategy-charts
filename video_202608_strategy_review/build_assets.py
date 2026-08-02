@@ -2,6 +2,7 @@
 """Build 16:9 visual assets for the six-minute strategy review video."""
 from __future__ import annotations
 
+import argparse
 import json
 from io import BytesIO
 from pathlib import Path
@@ -19,10 +20,11 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parent
 ASSET_DIR = ROOT / "assets"
 DATA_DIR = ROOT / "data"
-NAV_PATH = DATA_DIR / "统一规则净值_最近一年.csv"
+NAV_PATH = DATA_DIR / "统一规则净值_最近三年.csv"
 METRIC_PATHS = {
     "6m": DATA_DIR / "策略指标_最近六个月.csv",
     "1y": DATA_DIR / "策略指标_最近一年.csv",
+    "3y": DATA_DIR / "策略指标_最近三年.csv",
 }
 
 W, H = 1920, 1080
@@ -62,16 +64,17 @@ PUBLIC_STRATEGIES = [
 ]
 
 SCENES = [
-    ("01-封面与钩子.png", 28),
-    ("02-交易体系全貌.png", 37),
-    ("03-统一比较口径.png", 30),
-    ("04-最近六个月总览.png", 40),
-    ("05-策略分工.png", 40),
-    ("06-V8风险复盘.png", 50),
-    ("07-小票逆风.png", 35),
-    ("08-最近一年对照.png", 40),
-    ("09-体系四原则.png", 35),
-    ("10-结尾与关注.png", 25),
+    ("01-封面与钩子.png", 25),
+    ("02-交易体系全貌.png", 32),
+    ("03-统一比较口径.png", 25),
+    ("04-最近六个月总览.png", 35),
+    ("05-策略分工.png", 35),
+    ("06-V8风险复盘.png", 45),
+    ("07-小票逆风.png", 30),
+    ("08-最近一年对照.png", 30),
+    ("09-最近三年对照.png", 40),
+    ("10-体系四原则.png", 38),
+    ("11-结尾与关注.png", 25),
 ]
 
 
@@ -135,7 +138,7 @@ def header(draw: ImageDraw.ImageDraw, kicker: str, title: str, subtitle: str | N
 def footer(draw: ImageDraw.ImageDraw, scene_no: int) -> None:
     draw.line((90, 1026, 1830, 1026), fill=BORDER, width=2)
     draw.text((90, 1040), "当前规则净值复盘｜共同截止 2026-07-28", font=font(17), fill=MUTED)
-    draw.text((1760, 1040), f"{scene_no:02d}/10", font=font(17, True), fill=MUTED)
+    draw.text((1760, 1040), f"{scene_no:02d}/{len(SCENES):02d}", font=font(17, True), fill=MUTED)
 
 
 def pill(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, fill: str, text_fill=PAPER) -> int:
@@ -147,7 +150,16 @@ def pill(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, fill: str, t
     return width
 
 
-def load_data() -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+def load_data(source_dir: Path | None = None) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    if source_dir is not None:
+        nav = pd.read_parquet(source_dir / "portfolio_rule_navs.parquet")
+        nav.index = pd.to_datetime(nav.index)
+        metrics = {
+            key: pd.read_csv(source_dir / f"portfolio_rule_metrics_{key}.csv", index_col=0, encoding="utf-8-sig")
+            for key in ("6m", "1y", "3y")
+        }
+        return nav.sort_index(), metrics
+
     nav = pd.read_csv(NAV_PATH, index_col="日期", encoding="utf-8-sig")
     nav.index = pd.to_datetime(nav.index)
     nav = nav.sort_index()
@@ -156,6 +168,7 @@ def load_data() -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
         "开始日期": "start",
         "结束日期": "end",
         "区间收益": "return",
+        "年化": "annualized",
         "夏普": "sharpe",
         "最大回撤": "max_drawdown",
         "卡玛": "calmar",
@@ -166,12 +179,9 @@ def load_data() -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     return nav, metrics
 
 
-def normalized_window(nav: pd.DataFrame, months: int | None = None) -> pd.DataFrame:
+def normalized_window(nav: pd.DataFrame, offset: pd.DateOffset) -> pd.DataFrame:
     end = nav.index[-1]
-    if months is None:
-        start_at = end - pd.DateOffset(years=1)
-    else:
-        start_at = end - pd.DateOffset(months=months)
+    start_at = end - offset
     starts = nav.index[nav.index <= start_at]
     start = starts[-1]
     frame = nav.loc[start:end].ffill().dropna()
@@ -480,6 +490,46 @@ def build_one_year(nav1: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Imag
     return image
 
 
+def build_three_year(metrics: dict[str, pd.DataFrame]) -> Image.Image:
+    image, draw = canvas()
+    header(draw, "最近三年", "更长窗口提高说服力，也更需要解释样本", "2023-07-28 至 2026-07-28｜统一起点、统一规则")
+    card(draw, (90, 245, 1040, 850), fill=PAPER)
+    draw.text((135, 285), "三年累计收益", font=font(28, True), fill=INK)
+    max_return = max(metric(metrics, "3y", name, "return") for name in COLORS)
+    for idx, name in enumerate(COLORS):
+        y = 365 + idx * 88
+        value = metric(metrics, "3y", name, "return")
+        draw.text((135, y), name, font=font(21, True), fill=INK)
+        bar_x = 315
+        bar_w = int(500 * value / max_return)
+        draw.rounded_rectangle((bar_x, y + 4, bar_x + max(bar_w, 8), y + 34), radius=5, fill=COLORS[name])
+        draw.text((965, y), pct(value), font=font(21, True), fill=COLORS[name], anchor="ra")
+
+    card(draw, (1090, 245, 1830, 850), fill=PAPER)
+    columns = [("策略", 1130), ("年化", 1395), ("夏普", 1535), ("回撤", 1675)]
+    for label, x in columns:
+        draw.text((x, 285), label, font=font(20, True), fill=MUTED)
+    draw.line((1125, 330, 1795, 330), fill=BORDER, width=2)
+    for idx, name in enumerate(COLORS):
+        y = 370 + idx * 88
+        draw.ellipse((1130, y + 8, 1148, y + 26), fill=COLORS[name])
+        draw.text((1160, y), name, font=font(20, True), fill=INK)
+        draw.text((1385, y), pct(metric(metrics, "3y", name, "annualized")), font=font(20), fill=INK)
+        draw.text((1545, y), f"{metric(metrics, '3y', name, 'sharpe'):.2f}", font=font(20), fill=INK)
+        draw.text((1670, y), pct(metric(metrics, "3y", name, "max_drawdown")), font=font(20), fill=INK)
+
+    card(draw, (90, 880, 1830, 985), fill="#FFF8E9", outline="#E7C574")
+    draw.text((130, 912), "重要限制", font=font(23, True), fill=AMBER)
+    draw.text(
+        (285, 912),
+        "小票三年 +376.13% 明显受小微盘强势阶段影响，不能直接外推为未来常态。",
+        font=font(23, True),
+        fill=INK,
+    )
+    footer(draw, 9)
+    return image
+
+
 def build_principles() -> Image.Image:
     image, draw = canvas()
     header(draw, "体系总结", "我的交易体系，浓缩成四条", "规则先于感受，组合先于单策略")
@@ -499,7 +549,7 @@ def build_principles() -> Image.Image:
         draw.text((x + 105, y + 28), title, font=font(36, True), fill=INK)
         paragraph(draw, (x + 35, y + 110), desc, font(25), MUTED, 740, 15)
         draw.rectangle((x + 35, y + 245, x + 160, y + 254), fill=color)
-    footer(draw, 9)
+    footer(draw, 10)
     return image
 
 
@@ -528,24 +578,31 @@ def build_end() -> Image.Image:
         paragraph(draw, (x + 35, 700), desc, font(24), MUTED, 445, 12)
         x += 570
     draw.text((90, 910), "关注的不是一张漂亮曲线，而是一套体系如何被持续验证。", font=font(31, True), fill=RED)
-    footer(draw, 10)
+    footer(draw, 11)
     return image
 
 
-def export_data(nav6: pd.DataFrame, nav1: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> None:
+def export_data(
+    nav6: pd.DataFrame,
+    nav1: pd.DataFrame,
+    nav3: pd.DataFrame,
+    metrics: dict[str, pd.DataFrame],
+) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     nav6.to_csv(DATA_DIR / "统一规则净值_最近六个月.csv", encoding="utf-8-sig", index_label="日期")
     nav1.to_csv(DATA_DIR / "统一规则净值_最近一年.csv", encoding="utf-8-sig", index_label="日期")
-    for key, label in [("6m", "最近六个月"), ("1y", "最近一年")]:
-        frame = metrics[key][["start", "end", "return", "sharpe", "max_drawdown", "calmar"]].copy()
-        frame.columns = ["开始日期", "结束日期", "区间收益", "夏普", "最大回撤", "卡玛"]
+    nav3.to_csv(DATA_DIR / "统一规则净值_最近三年.csv", encoding="utf-8-sig", index_label="日期")
+    for key, label in [("6m", "最近六个月"), ("1y", "最近一年"), ("3y", "最近三年")]:
+        frame = metrics[key][["start", "end", "return", "annualized", "sharpe", "max_drawdown", "calmar"]].copy()
+        frame.columns = ["开始日期", "结束日期", "区间收益", "年化", "夏普", "最大回撤", "卡玛"]
         frame.to_csv(DATA_DIR / f"策略指标_{label}.csv", encoding="utf-8-sig", index_label="策略")
 
 
 def build_contact_sheet(images: list[Image.Image]) -> Image.Image:
     thumb_w, thumb_h = 768, 432
     gap = 20
-    sheet = Image.new("RGB", (thumb_w * 2 + gap * 3, thumb_h * 5 + gap * 6), "#E7EAE7")
+    rows = (len(images) + 1) // 2
+    sheet = Image.new("RGB", (thumb_w * 2 + gap * 3, thumb_h * rows + gap * (rows + 1)), "#E7EAE7")
     for idx, image in enumerate(images):
         col = idx % 2
         row = idx // 2
@@ -556,10 +613,18 @@ def build_contact_sheet(images: list[Image.Image]) -> Image.Image:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--source-dir",
+        type=Path,
+        help="Optional private comparison-output directory used to refresh the public CSV files.",
+    )
+    args = parser.parse_args()
     ASSET_DIR.mkdir(parents=True, exist_ok=True)
-    nav, metrics = load_data()
-    nav6 = normalized_window(nav, months=6)
-    nav1 = normalized_window(nav, months=None)
+    nav, metrics = load_data(args.source_dir)
+    nav6 = normalized_window(nav, pd.DateOffset(months=6))
+    nav1 = normalized_window(nav, pd.DateOffset(years=1))
+    nav3 = normalized_window(nav, pd.DateOffset(years=3))
 
     images = [
         build_cover(nav6, metrics),
@@ -570,6 +635,7 @@ def main() -> None:
         build_v8(nav6, metrics),
         build_smallcap(nav6, metrics),
         build_one_year(nav1, metrics),
+        build_three_year(metrics),
         build_principles(),
         build_end(),
     ]
@@ -577,7 +643,7 @@ def main() -> None:
         image.save(ASSET_DIR / name, format="PNG", optimize=True)
     build_contact_sheet(images).save(ROOT / "分镜总览.png", format="PNG", optimize=True)
 
-    export_data(nav6, nav1, metrics)
+    export_data(nav6, nav1, nav3, metrics)
     manifest = {
         "title": "半年复盘：我为什么不再寻找一套万能策略",
         "resolution": [W, H],

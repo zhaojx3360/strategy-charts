@@ -8,42 +8,46 @@
   "scenes": [
     {
       "file": "assets/01-封面与钩子.png",
-      "duration_seconds": 28
+      "duration_seconds": 25
     },
     {
       "file": "assets/02-交易体系全貌.png",
-      "duration_seconds": 37
+      "duration_seconds": 32
     },
     {
       "file": "assets/03-统一比较口径.png",
-      "duration_seconds": 30
+      "duration_seconds": 25
     },
     {
       "file": "assets/04-最近六个月总览.png",
-      "duration_seconds": 40
+      "duration_seconds": 35
     },
     {
       "file": "assets/05-策略分工.png",
-      "duration_seconds": 40
+      "duration_seconds": 35
     },
     {
       "file": "assets/06-V8风险复盘.png",
-      "duration_seconds": 50
+      "duration_seconds": 45
     },
     {
       "file": "assets/07-小票逆风.png",
-      "duration_seconds": 35
+      "duration_seconds": 30
     },
     {
       "file": "assets/08-最近一年对照.png",
+      "duration_seconds": 30
+    },
+    {
+      "file": "assets/09-最近三年对照.png",
       "duration_seconds": 40
     },
     {
-      "file": "assets/09-体系四原则.png",
-      "duration_seconds": 35
+      "file": "assets/10-体系四原则.png",
+      "duration_seconds": 38
     },
     {
-      "file": "assets/10-结尾与关注.png",
+      "file": "assets/11-结尾与关注.png",
       "duration_seconds": 25
     }
   ],
