@@ -285,7 +285,7 @@ def build_cover(nav6: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Image.I
 
 def build_system() -> Image.Image:
     image, draw = canvas()
-    header(draw, "交易体系", "七个策略，四类职责", "公开策略思想与表现，不公开仓位、标的和参数")
+    header(draw, "交易体系", "七个策略，四类职责", "从策略分工到风险代价，看清每一套的作用")
     for idx, (name, category, thought, color) in enumerate(PUBLIC_STRATEGIES):
         if idx < 4:
             x = 90 + idx * 435
@@ -301,8 +301,8 @@ def build_system() -> Image.Image:
         draw.text((x + 30, y + 82), name, font=font(34, True), fill=INK)
         draw.text((x + 30, y + 148), thought, font=font(23), fill=MUTED)
     card(draw, (90, 870, 1830, 975), fill="#FFF8E9", outline="#E7C574")
-    draw.text((130, 903), "公开：策略名称、思想定位、阶段表现", font=font(24, True), fill=INK)
-    draw.text((940, 903), "保留：仓位比例、具体标的、参数与执行细节", font=font(24, True), fill=AMBER)
+    draw.text((130, 903), "关注：策略分工、收益路径、风险代价、复盘修正", font=font(24, True), fill=INK)
+    draw.text((1050, 903), "目标：经得起不同窗口检验", font=font(24, True), fill=AMBER)
     footer(draw, 2)
     return image
 
@@ -440,7 +440,7 @@ def build_smallcap(nav6: pd.DataFrame, metrics: dict[str, pd.DataFrame]) -> Imag
     chart = chart_image(nav6[["小票"]], (980, 570), legend=False)
     image.paste(chart, (70, 250))
     card(draw, (1100, 250, 1820, 825), fill=PAPER)
-    draw.text((1150, 300), "公开的策略思想", font=font(30, True), fill=INK)
+    draw.text((1150, 300), "策略思想", font=font(30, True), fill=INK)
     factors = ["多维筛选", "风险排雷", "分散持有", "真实成本", "样本外验证"]
     x, y = 1150, 380
     for idx, value in enumerate(factors):
@@ -556,7 +556,7 @@ def build_principles() -> Image.Image:
 def build_end() -> Image.Image:
     image, draw = canvas()
     draw.text((90, 85), "下一阶段", font=font(26, True), fill=RED)
-    paragraph(draw, (90, 135), "不只晒收益，\n继续公开验证、错误与修正", font(68, True), INK, 1250, 16)
+    paragraph(draw, (90, 135), "不只晒收益，\n继续验证、复盘与修正", font(68, True), INK, 1250, 16)
     paragraph(
         draw,
         (94, 345),
@@ -567,8 +567,8 @@ def build_end() -> Image.Image:
         18,
     )
     items = [
-        ("规则", "公开每套策略怎样运行"),
-        ("过程", "公开复测、否决与犯过的错"),
+        ("体系", "解释不同策略各自的职责"),
+        ("过程", "记录复测、否决与犯过的错"),
         ("结果", "收益与回撤都不省略"),
     ]
     x = 90
