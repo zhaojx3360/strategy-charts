@@ -1,3 +1,4 @@
+import { createPlanning, stageComplete } from './planning.js';
 const paths = {
   film: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v16M16 4v16M3 9h5m-5 6h5m8-6h5m-5 6h5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -31,7 +32,7 @@ const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const statusNames = { pending: '待审核', approved: '已通过', changes_requested: '需要修改' };
-const stageNames = { 3: '原始素材', 4: '粗剪审核', 5: '精剪审核', 6: '发布定稿' };
+const stageNames = { 1: '想法与选题', 2: '口播提纲', 3: '录制与素材', 4: '粗剪审核', 5: '精剪审核', 6: '发布定稿' };
 let workspace, projectId, versionId, activeStage = 4, loadedVersionId = null;
 let filter = 'open', selectedCommentId = null, pendingSeek = null, importMode = 'file', importFile = null, reviewStatus = 'approved';
 let toastTimer, importing = false;
@@ -89,24 +90,27 @@ async function loadWorkspace(choose = {}) {
   if (!workspace.projects.some(p => p.id === projectId)) projectId = workspace.projects[0]?.id || null;
   if (choose.versionId) { versionId = choose.versionId; activeStage = version()?.stage || activeStage; }
   if (versionId && !version()) versionId = null;
-  if (!versionId && !choose.keepEmptyStage && project()?.versions.length) {
+  if (!versionId && activeStage >= 3 && !choose.keepEmptyStage && project()?.versions.length) {
     const preferred = project().versions.filter(v => v.stage === activeStage).at(-1) || project().versions.filter(v => v.stage === 4).at(-1) || project().versions.at(-1);
     versionId = preferred.id; activeStage = preferred.stage;
   }
   render(); remember();
 }
 function selectProject(nextId) {
+  planning.stash();
   stashDraft(); video.pause(); projectId = nextId; versionId = null; selectedCommentId = null;
   const p = project(); const preferred = p.versions.filter(v => v.stage === 4).at(-1) || p.versions.at(-1);
-  versionId = preferred?.id || null; activeStage = preferred?.stage || 3;
+  versionId = preferred?.id || null; activeStage = preferred?.stage || 1;
   render(); restoreDraft(); remember();
 }
 function selectVersion(nextId, seekTo = null) {
+  planning.stash();
   stashDraft(); selectedCommentId = null; versionId = nextId; activeStage = version().stage;
   pendingSeek = seekTo; render(); restoreDraft(); remember();
   if (seekTo !== null && video.readyState >= 1) { video.currentTime = Math.min(seekTo, video.duration || seekTo); pendingSeek = null; }
 }
 function selectStage(stage) {
+  planning.stash();
   stashDraft(); video.pause(); activeStage = stage; selectedCommentId = null;
   versionId = project()?.versions.filter(v => v.stage === stage).at(-1)?.id || null;
   render(); restoreDraft(); remember();
@@ -115,17 +119,19 @@ function render() {
   const p = project(), v = version();
   $('projectCount').textContent = workspace.projects.length;
   $('projectList').innerHTML = workspace.projects.map(item => `<button class="project-item${item.id === projectId ? ' active' : ''}" data-project="${item.id}" aria-current="${item.id === projectId ? 'page' : 'false'}"><span class="project-icon">${icon('film')}</span><span><strong>${esc(item.title)}</strong><small>${item.demo ? '演示项目' : item.versions.length + ' 个视频版本'} · ${dateText(item.updatedAt).slice(0, 5)}</small></span></button>`).join('');
-  $('connection').textContent = '本地已连接';
+  $('connection').textContent = '本地存储已连接';
   $('storageLocation').textContent = workspace.dataDir; $('storageLocation').title = `素材与审核记录：${workspace.dataDir}`;
   $('projectTitle').innerHTML = p ? esc(p.title) + (p.demo ? '<span class="demo-tag">演示作品</span>' : '') : '开始你的第一份作品';
-  $('projectBrief').textContent = p?.brief || (p ? '先看一遍视频，把修改意见留在具体位置。' : '创建作品，再添加一份原片或剪辑版本。');
-  $('projectEyebrow').textContent = p?.demo ? 'DEMO PROJECT / 体验审片流程' : 'VIDEO REVIEW / 视频审核';
+  $('projectBrief').textContent = p?.brief || (p ? '围绕一个主旨，把你的想法做成一条作品。' : '创建作品，写下想法，或者直接导入已有视频。');
+  $('projectEyebrow').textContent = p?.demo ? 'DEMO PROJECT / 体验完整流程' : 'CREATOR WORKSPACE / 创作工作区';
   $('importButton').disabled = !p;
   $('historyButton').disabled = $('exportButton').disabled = !p;
   $('stageNavigation').innerHTML = workspace.stages.map(s => {
-    const versions = p?.versions.filter(v => v.stage === s.id) || [], approved = versions.at(-1)?.review.status === 'approved';
-    return `<button class="stage-item${activeStage === s.id ? ' active' : ''}${approved ? ' completed' : ''}" data-stage="${s.id}" aria-current="${activeStage === s.id ? 'step' : 'false'}"><span class="stage-number">${approved ? icon('check') : String(s.id).padStart(2, '0')}</span>${s.name}<span class="stage-count">${versions.length}</span></button>`;
+    const versions = p?.versions.filter(v => v.stage === s.id) || [], approved = stageComplete(p, s.id);
+    return `<button class="stage-item${activeStage === s.id ? ' active' : ''}${approved ? ' completed' : ''}" data-stage="${s.id}" aria-current="${activeStage === s.id ? 'step' : 'false'}"><span class="stage-number">${approved ? icon('check') : String(s.id).padStart(2, '0')}</span>${s.name}${s.id >= 3 ? `<span class="stage-count">${versions.length}</span>` : ''}</button>`;
   }).join('');
+  $('reviewLayout').hidden = activeStage < 3;
+  planning.render(p, activeStage);
   $('currentVersion').textContent = v?.label || `${stageNames[activeStage]} · 尚未添加视频`;
   $('videoDimensions').textContent = v?.width ? `${v.width} × ${v.height}` : '';
   $('reviewBadge').textContent = v ? statusNames[v.review.status] : '等待素材';
@@ -188,7 +194,7 @@ function jumpComment(commentId) {
 function showImport() {
   if (!project()) { $('projectDialog').showModal(); return; }
   $('importForm').reset(); importFile = null; $('fileLabel').textContent = '点击选择，或拖入视频文件';
-  $('importStage').value = String(project().versions.length ? activeStage : 3);
+  $('importStage').value = String(activeStage >= 3 ? activeStage : 3);
   $('importProgress').hidden = true; setImportMode('file'); $('importDialog').showModal();
 }
 function setImportMode(mode) {
@@ -220,6 +226,7 @@ function showReview(status) {
   $('reviewDialog').showModal();
 }
 
+const planning = createPlanning({ getProject: project, api, reload: () => loadWorkspace({ keepEmptyStage: true }), selectStage, showImport, toast, safe, esc, icon });
 paintIcons();
 document.addEventListener('click', safe(async event => {
   const target = event.target.closest('button, a'); if (!target) return;
@@ -242,8 +249,8 @@ $('projectForm').onsubmit = safe(async event => {
   event.preventDefault(); const submit = event.submitter; submit.disabled = true;
   try {
     const result = await api('/api/projects', { method: 'POST', body: JSON.stringify({ title: $('newTitle').value, brief: $('newBrief').value }) });
-    stashDraft(); projectId = result.project.id; versionId = null; activeStage = 3;
-    await loadWorkspace({ keepEmptyStage: true }); restoreDraft(); $('projectDialog').close(); toast('作品已创建，现在可以添加素材。'); showImport();
+    planning.stash(); stashDraft(); projectId = result.project.id; versionId = null; activeStage = 1;
+    await loadWorkspace({ keepEmptyStage: true }); restoreDraft(); $('projectDialog').close(); toast('作品已创建，先随意写下你想说的内容。');
   } finally { submit.disabled = false; }
 });
 $('importButton').onclick = $('emptyImport').onclick = showImport;
@@ -312,7 +319,7 @@ $('historyButton').onclick = () => {
   $('historyDialog').showModal();
 };
 $('exportButton').onclick = () => { $('exportMarkdown').href = `/api/projects/${projectId}/export?format=md`; $('exportJson').href = `/api/projects/${projectId}/export?format=json`; $('exportDialog').showModal(); };
-$('refresh').onclick = safe(async () => { stashDraft(); await loadWorkspace({ keepEmptyStage: true }); toast('已读取最新作品、版本和审核记录。'); });
+$('refresh').onclick = safe(async () => { planning.stash(); stashDraft(); await loadWorkspace({ keepEmptyStage: true }); toast('已读取最新想法、选题、提纲和视频记录。'); });
 document.addEventListener('keydown', safe(async event => {
   if (event.target.closest('input,textarea,select') || document.querySelector('dialog[open]')) return;
   if (event.code === 'Space') { event.preventDefault(); await togglePlay(); }
@@ -320,6 +327,6 @@ document.addEventListener('keydown', safe(async event => {
   if (event.code === 'ArrowRight' && version()) { event.preventDefault(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); }
   if (event.code === 'KeyC' && version()) { event.preventDefault(); video.pause(); $('commentText').focus(); }
 }));
-window.addEventListener('beforeunload', stashDraft);
+window.addEventListener('beforeunload', () => { planning.stash(); stashDraft(); });
 try { const saved = JSON.parse(localStorage.getItem('jianpian-selection') || '{}'); projectId = saved.projectId; versionId = saved.versionId; activeStage = saved.activeStage || 4; } catch { /* Use the first project. */ }
 loadWorkspace().then(restoreDraft).catch(error => { $('connection').textContent = '本地服务未连接'; $('projectTitle').textContent = '连接暂时中断'; $('projectBrief').textContent = error.message; toast(error.message, true); });

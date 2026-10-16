@@ -10,11 +10,19 @@ import { promisify } from 'node:util';
 const runFile = promisify(execFile);
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const TYPES = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.png': 'image/png', '.jpg': 'image/jpeg' };
-const STAGES = [{ id: 3, name: '原始素材' }, { id: 4, name: '粗剪审核' }, { id: 5, name: '精剪审核' }, { id: 6, name: '发布定稿' }];
+const STAGES = [{ id: 1, name: '想法与选题' }, { id: 2, name: '口播提纲' }, { id: 3, name: '录制与素材' }, { id: 4, name: '粗剪审核' }, { id: 5, name: '精剪审核' }, { id: 6, name: '发布定稿' }];
 const now = () => new Date().toISOString();
 const id = () => randomUUID();
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const clean = (value, limit = 200) => String(value ?? '').trim().slice(0, limit);
+const planningDefaults = () => ({ ideas: '', audience: '', duration: '3—5 分钟', ideasRevision: 0, topics: [], topicsIdeasRevision: null, topicRevision: 0, selectedTopicId: null, topicConfirmedAt: null, outlineHistory: [], outline: { text: '', revision: 0, status: 'draft', note: '', topicId: null, topicRevision: null }, recording: { notes: '', checklist: {} } });
+function planningIn(project) {
+  const defaults = planningDefaults();
+  project.planning = { ...defaults, ...project.planning, outline: { ...defaults.outline, ...project.planning?.outline }, recording: { ...defaults.recording, ...project.planning?.recording } };
+  return project.planning;
+}
+const topicReady = p => Boolean(p.selectedTopicId && p.topicsIdeasRevision === p.ideasRevision && p.topics.some(t => t.id === p.selectedTopicId));
+const outlineReady = p => topicReady(p) && p.outline.topicId === p.selectedTopicId && p.outline.topicRevision === p.topicRevision;
 
 export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/disk/self-space/self-media/审片台', port = Number(process.env.PORT || 4317) } = {}) {
   dataDir = path.resolve(dataDir);
@@ -44,7 +52,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     return version;
   }
   function publicState(state) {
-    return { ...state, stages: STAGES, dataDir, projects: state.projects.map(p => ({ ...p, versions: p.versions.map(v => ({ ...v, available: fs.existsSync(v.filePath), url: `/media/${v.id}`, posterUrl: v.posterPath && fs.existsSync(v.posterPath) ? `/poster/${v.id}` : null })) })) };
+    return { ...state, stages: STAGES, dataDir, projects: state.projects.map(p => ({ ...p, planning: planningIn(p), versions: p.versions.map(v => ({ ...v, available: fs.existsSync(v.filePath), url: `/media/${v.id}`, posterUrl: v.posterPath && fs.existsSync(v.posterPath) ? `/poster/${v.id}` : null })) })) };
   }
   function record(project, action, version, detail) {
     project.updatedAt = now();
@@ -77,7 +85,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
   }
   async function addVersion(projectId, options) {
     const stage = Number(options.stage);
-    if (!STAGES.some(s => s.id === stage)) throw fail(400, '请选择素材、粗剪、精剪或定稿阶段。');
+    if (stage < 3 || !STAGES.some(s => s.id === stage)) throw fail(400, '请选择素材、粗剪、精剪或定稿阶段。');
     const filePath = fs.realpathSync(options.filePath);
     const ext = path.extname(filePath).toLowerCase();
     if (!['.mp4', '.m4v', '.mov', '.webm'].includes(ext)) throw fail(400, '支持 MP4、MOV、M4V 和 WebM 视频。');
@@ -127,13 +135,13 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     const url = new URL(req.url, `http://${host}`);
     const parts = url.pathname.split('/').filter(Boolean);
     try {
-      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.0.0', dataDir }); return; }
+      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.1.0', dataDir }); return; }
       if (req.method === 'GET' && url.pathname === '/api/workspace') { send(res, 200, publicState(read())); return; }
       if (req.method === 'POST' && url.pathname === '/api/projects') {
         const body = await jsonBody(req);
         if (!clean(body.title)) throw fail(400, '请先写一个作品名称。');
         const project = change(state => {
-          const p = { id: id(), title: clean(body.title, 100), brief: clean(body.brief, 3000), demo: false, createdAt: now(), updatedAt: now(), versions: [], comments: [], history: [] };
+          const p = { id: id(), title: clean(body.title, 100), brief: clean(body.brief, 3000), demo: false, createdAt: now(), updatedAt: now(), planning: planningDefaults(), versions: [], comments: [], history: [] };
           state.projects.unshift(p); return p;
         });
         send(res, 201, { project }); return;
@@ -141,6 +149,59 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
       if (parts[0] === 'api' && parts[1] === 'projects' && parts[2]) {
         const projectId = parts[2];
         projectIn(read(), projectId);
+        if (req.method === 'PATCH' && parts[3] === 'planning') {
+          const body = await jsonBody(req);
+          const planning = change(state => {
+            const project = projectIn(state, projectId), p = planningIn(project);
+            const invalidateOutline = () => { if (p.outline.text) p.outline.status = 'changes_requested'; };
+            let detail;
+            if (body.action === 'ideas') {
+              const ideas = clean(body.ideas, 60000), audience = clean(body.audience, 300), duration = clean(body.duration, 100);
+              if (!ideas) throw fail(400, '先写下你想说的内容。');
+              if (ideas !== p.ideas || audience !== p.audience || duration !== p.duration) {
+                p.ideas = ideas; p.audience = audience; p.duration = duration; p.ideasRevision++;
+                p.selectedTopicId = null; p.topicConfirmedAt = null; invalidateOutline();
+              }
+              detail = `保存自由想法，第 ${p.ideasRevision} 版`;
+            } else if (body.action === 'topics') {
+              if (!p.ideas || body.ideasRevision !== p.ideasRevision) throw fail(409, '想法版本已经变化，请按最新素材重新整理选题。');
+              if (!Array.isArray(body.topics) || body.topics.length !== 3) throw fail(400, '请提供三个有区别的选题方向。');
+              const fields = ['title', 'premise', 'conflict', 'viewpoint', 'reasons', 'missing'];
+              const topics = body.topics.map((t, index) => {
+                if (!t || fields.some(k => typeof t[k] !== 'string' || !t[k].trim())) throw fail(400, '每个选题需要标题、主旨、矛盾、观点、理由和待补充内容。没有待补充内容可写“暂无”。');
+                return { id: id(), ...Object.fromEntries(fields.map(k => [k, clean(t[k], k === 'title' ? 200 : 3000)])), recommended: t.recommended === true, number: index + 1 };
+              });
+              if (new Set(topics.map(t => t.title)).size !== 3) throw fail(400, '三个选题不能使用相同标题。');
+              p.topics = topics; p.topicsIdeasRevision = p.ideasRevision; p.topicRevision++;
+              p.selectedTopicId = null; p.topicConfirmedAt = null; invalidateOutline(); detail = '保存三个选题，等待选择';
+            } else if (body.action === 'select-topic') {
+              if (p.topicsIdeasRevision !== p.ideasRevision || !p.topics.some(t => t.id === body.topicId)) throw fail(409, '请先按当前想法保存三个选题。');
+              if (p.selectedTopicId !== body.topicId) { p.selectedTopicId = body.topicId; invalidateOutline(); }
+              p.topicConfirmedAt = now(); detail = `确认选题：${p.topics.find(t => t.id === body.topicId).title}`;
+            } else if (body.action === 'outline') {
+              if (!topicReady(p) || body.topicId !== p.selectedTopicId || body.topicRevision !== p.topicRevision) throw fail(409, '选题已变化，请先确认当前选题，再保存对应提纲。');
+              const text = clean(body.text, 60000); if (!text) throw fail(400, '提纲内容不能为空。');
+              if (p.outline.text) p.outlineHistory.push({ ...p.outline });
+              p.outline = { text, revision: p.outline.revision + 1, status: 'pending', note: '', topicId: p.selectedTopicId, topicRevision: p.topicRevision, updatedAt: now() };
+              detail = `保存提纲 v${p.outline.revision}，等待审核`;
+            } else if (body.action === 'outline-review') {
+              if (!p.outline.text || !outlineReady(p)) throw fail(409, '这份提纲与当前选题不匹配，请重新保存提纲。');
+              if (body.outlineRevision !== p.outline.revision) throw fail(409, '提纲版本已变化，请刷新后重新审核。');
+              if (!['approved', 'changes_requested'].includes(body.status)) throw fail(400, '提纲审核状态不正确。');
+              if (body.status === 'changes_requested' && !clean(body.note, 3000)) throw fail(400, '请写下提纲修改意见。');
+              p.outline.status = body.status; p.outline.note = clean(body.note, 3000); p.outline.reviewedAt = now();
+              detail = `${body.status === 'approved' ? '通过' : '退回'}提纲 v${p.outline.revision}${p.outline.note ? '：' + p.outline.note : ''}`;
+            } else if (body.action === 'recording') {
+              const allowed = ['audio', 'framing', 'facts', 'materials'];
+              p.recording = { notes: clean(body.notes, 10000), checklist: Object.fromEntries(allowed.map(k => [k, body.checklist?.[k] === true])), updatedAt: now() };
+              detail = '保存录制备忘与准备情况';
+            } else throw fail(400, '不支持的创作步骤。');
+            record(project, 'planning_updated', null, detail);
+            project.history[0].stage = body.action === 'recording' ? 3 : body.action.startsWith('outline') ? 2 : 1;
+            return p;
+          });
+          send(res, 200, { planning }); return;
+        }
         if (req.method === 'POST' && parts[3] === 'import-path') {
           const body = await jsonBody(req);
           if (!body.filePath || !fs.existsSync(body.filePath)) throw fail(400, '找不到该文件，请检查完整路径。');
@@ -208,7 +269,8 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
           let body = JSON.stringify(report, null, 2);
           if (format === 'md') {
             const stamp = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
-            body = `# ${project.title} 审片反馈\n\n导出时间：${report.exportedAt}\n\n${report.notice}\n\n`;
+            const p = planningIn(project), selected = p.topics.find(t => t.id === p.selectedTopicId);
+            body = `# ${project.title} 制作记录\n\n导出时间：${report.exportedAt}\n\n${report.notice}\n\n## 自由想法\n\n${p.ideas || '尚未填写'}\n\n## 已选方向\n\n${selected ? `${selected.title}\n\n主旨：${selected.premise}\n\n矛盾：${selected.conflict}\n\n观点：${selected.viewpoint}` : '尚未确认'}\n\n## 口播提纲（${p.outline.status}）\n\n${p.outline.text || '尚未填写'}\n\n审核意见：${p.outline.note || '无'}\n\n## 录制备忘\n\n${p.recording.notes || '无'}\n\n`;
             for (const v of project.versions) {
               body += `## ${v.label}\n\n- 阶段：${STAGES.find(s => s.id === v.stage)?.name}\n- 原文件：${v.filePath}\n- 版本 ID：${v.id}\n- 审核：${v.review.status}\n- 说明：${v.review.note || '无'}\n\n`;
               const comments = project.comments.filter(c => c.versionId === v.id);
@@ -225,7 +287,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
         if (!file) throw fail(404, '暂无封面。');
         streamFile(req, res, file, TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'); return;
       }
-      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
+      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
         const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'");

@@ -16,17 +16,19 @@
       <div class="side-label">工作空间 <span id="projectCount">0</span></div>
       <button class="new-project" id="newProject"><span data-icon="plus"></span>新建作品</button>
       <nav id="projectList" class="project-list" aria-label="作品列表"></nav>
-      <div class="workflow-note"><span data-icon="spark"></span><div><strong>想法留在对话里</strong><p>把视频放在这里，<br>把意见留在具体的位置。</p></div></div>
-      <div class="sidebar-bottom"><span class="online-dot"></span><span id="connection">本地连接中</span><button class="icon-button" id="refresh" title="刷新作品和版本" aria-label="刷新作品和版本" data-icon="refresh"></button></div>
+      <div class="workflow-note"><span data-icon="spark"></span><div><strong>从想法，到这一版</strong><p>每一步看得见，<br>确认以后，再往下做。</p></div></div>
+      <div class="sidebar-bottom"><span class="online-dot"></span><span id="connection">本地存储连接中</span><button class="icon-button" id="refresh" title="刷新作品和版本" aria-label="刷新作品和版本" data-icon="refresh"></button></div>
       <div id="storageLocation" class="storage-location" title=""></div>
     </aside>
 
     <main class="workspace">
-      <header class="workspace-header"><div class="breadcrumb">工作空间 <span>/</span> 视频审核</div><div class="header-actions"><span class="local-badge"><span class="online-dot"></span>LOCAL WORKSPACE</span><button class="button ghost" id="historyButton"><span data-icon="history"></span>审核记录</button><button class="button ghost" id="exportButton"><span data-icon="export"></span>导出反馈</button></div></header>
+      <header class="workspace-header"><div class="breadcrumb">工作空间 <span>/</span> 作品制作</div><div class="header-actions"><span class="local-badge"><span class="online-dot"></span>LOCAL WORKSPACE</span><button class="button ghost" id="historyButton"><span data-icon="history"></span>审核记录</button><button class="button ghost" id="exportButton"><span data-icon="export"></span>导出记录</button></div></header>
       <div class="workspace-title"><div><div class="eyebrow" id="projectEyebrow">VIDEO REVIEW</div><h1 id="projectTitle">正在打开工作台</h1><p id="projectBrief">每一版修改，都有迹可循。</p></div><button class="button primary" id="importButton"><span data-icon="plus"></span>添加视频版本</button></div>
       <nav class="stage-navigation" id="stageNavigation" aria-label="制作阶段"></nav>
 
-      <div class="review-layout">
+      <div class="connection-note"><span data-icon="lock"></span><span>本地工作区 · 需要 AI 时，复制请求到当前对话；结果保存后刷新查看。</span></div>
+      <section id="planningPanel" class="planning-panel" aria-label="前期创作流程" hidden></section>
+      <div class="review-layout" id="reviewLayout">
         <section class="video-column" aria-label="视频预览">
           <div class="player-panel" id="playerPanel">
             <div class="player-heading"><div><span class="tiny-dot"></span><strong id="currentVersion">尚未添加视频</strong><span id="videoDimensions" class="muted"></span></div><span id="reviewBadge" class="status-badge pending">待审核</span></div>
