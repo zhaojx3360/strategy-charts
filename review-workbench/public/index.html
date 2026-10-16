@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#15171b">
+  <title>见片 · 本地审片台</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="见片首页"><span class="brand-mark" data-icon="film"></span><span><strong>见片<span class="brand-dot">.</span></strong><small>本地审片工作台</small></span></a>
+      <div class="side-label">工作空间 <span id="projectCount">0</span></div>
+      <button class="new-project" id="newProject"><span data-icon="plus"></span>新建作品</button>
+      <nav id="projectList" class="project-list" aria-label="作品列表"></nav>
+      <div class="workflow-note"><span data-icon="spark"></span><div><strong>想法留在对话里</strong><p>把视频放在这里，<br>把意见留在具体的位置。</p></div></div>
+      <div class="sidebar-bottom"><span class="online-dot"></span><span id="connection">本地连接中</span><button class="icon-button" id="refresh" title="刷新作品和版本" aria-label="刷新作品和版本" data-icon="refresh"></button></div>
+      <div id="storageLocation" class="storage-location" title=""></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="workspace-header"><div class="breadcrumb">工作空间 <span>/</span> 视频审核</div><div class="header-actions"><span class="local-badge"><span class="online-dot"></span>LOCAL WORKSPACE</span><button class="button ghost" id="historyButton"><span data-icon="history"></span>审核记录</button><button class="button ghost" id="exportButton"><span data-icon="export"></span>导出反馈</button></div></header>
+      <div class="workspace-title"><div><div class="eyebrow" id="projectEyebrow">VIDEO REVIEW</div><h1 id="projectTitle">正在打开工作台</h1><p id="projectBrief">每一版修改，都有迹可循。</p></div><button class="button primary" id="importButton"><span data-icon="plus"></span>添加视频版本</button></div>
+      <nav class="stage-navigation" id="stageNavigation" aria-label="制作阶段"></nav>
+
+      <div class="review-layout">
+        <section class="video-column" aria-label="视频预览">
+          <div class="player-panel" id="playerPanel">
+            <div class="player-heading"><div><span class="tiny-dot"></span><strong id="currentVersion">尚未添加视频</strong><span id="videoDimensions" class="muted"></span></div><span id="reviewBadge" class="status-badge pending">待审核</span></div>
+            <div class="video-viewport" id="videoViewport">
+              <video id="video" preload="metadata" playsinline aria-label="视频预览"></video>
+              <button class="big-play" id="bigPlay" aria-label="播放视频" data-icon="play"></button>
+              <div class="empty-video" id="emptyVideo"><span data-icon="film"></span><h2>从一段素材开始</h2><p>添加本地视频，开启这一阶段的审核。</p><button class="button primary" id="emptyImport"><span data-icon="plus"></span>添加视频</button></div>
+              <div class="video-error" id="videoError" hidden><span data-icon="alert"></span><strong>浏览器暂时无法播放这个文件</strong><p>请确认文件可用。MOV 或 HEVC 视频可转为 H.264 MP4 后添加。</p></div>
+            </div>
+            <div class="player-controls" id="playerControls">
+              <div class="seek-track"><div class="seek-progress" id="seekProgress"></div><div id="commentMarkers" class="comment-markers"></div><input type="range" id="seek" min="0" max="1" step="0.01" value="0" aria-label="播放进度"></div>
+              <div class="control-row"><div class="control-left"><button class="icon-button" id="playPause" aria-label="播放" data-icon="play"></button><button class="icon-button" id="skipBack" aria-label="后退五秒" data-icon="back"></button><button class="icon-button" id="skipForward" aria-label="前进五秒" data-icon="forward"></button><span id="timeDisplay" class="time-display">00:00 <i>/</i> 00:00</span></div><div class="control-right"><button class="icon-button" id="mute" aria-label="静音" data-icon="volume"></button><select id="playbackRate" aria-label="播放速度"><option value="0.75">0.75×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select><button class="icon-button" id="fullscreen" aria-label="全屏播放" data-icon="expand"></button></div></div>
+            </div>
+          </div>
+
+          <section class="versions-section"><div class="section-heading"><h2>视频版本 <span id="versionCount">0</span></h2><span>每个版本，独立批注与审核</span></div><div class="version-list" id="versionList"></div></section>
+          <section class="review-summary"><div class="summary-icon" data-icon="shield"></div><div><strong id="reviewSummaryTitle">准备开始审核</strong><p id="reviewSummaryText">预览视频，在右侧留下意见。</p></div><div class="review-buttons"><button class="button secondary" id="requestChanges"><span data-icon="edit"></span>需要修改</button><button class="button approve" id="approveStage"><span data-icon="check"></span>通过本阶段</button></div></section>
+          <div class="workspace-footnote"><span><kbd>空格</kbd> 播放 / 暂停 <kbd>← →</kbd> 跳转 <kbd>C</kbd> 添加批注</span><a id="downloadVideo" class="text-link" hidden><span data-icon="download"></span>下载当前版本</a></div>
+        </section>
+
+        <aside class="feedback-panel" aria-label="审片批注">
+          <div class="feedback-heading"><div><span class="eyebrow">REVIEW NOTES</span><h2>审片批注 <span id="commentCount">0</span></h2></div><span class="notes-icon" data-icon="comment"></span></div>
+          <div class="comment-tabs" role="tablist" aria-label="批注状态"><button class="active" data-filter="open" role="tab" aria-selected="true">待处理 <span id="openCount">0</span></button><button data-filter="all" role="tab" aria-selected="false">全部 <span id="allCount">0</span></button><button data-filter="resolved" role="tab" aria-selected="false">已处理 <span id="resolvedCount">0</span></button></div>
+          <div class="notes-scope"><span id="notesVersion">当前版本</span><label><input type="checkbox" id="allVersions">跨版本查看</label></div>
+          <div class="comment-list" id="commentList"></div>
+          <form id="commentForm" class="comment-composer">
+            <div class="composer-top"><strong>留下修改意见</strong><span>绑定当前版本</span></div>
+            <div class="time-input-row"><button type="button" class="time-capture" id="captureTime" title="使用播放器当前时间"><span data-icon="pin"></span></button><input id="commentTime" value="00:00.0" aria-label="批注时间" placeholder="00:00.0"><span class="range-dash" id="rangeDash" hidden>—</span><input id="commentEnd" aria-label="批注结束时间" placeholder="结束时间" hidden><button type="button" class="range-toggle" id="rangeToggle">＋标记区间</button></div>
+            <textarea id="commentText" rows="3" maxlength="3000" placeholder="这里想怎么改？例如：这一句重复了，保留后一句。" aria-label="修改意见"></textarea>
+            <div class="composer-bottom"><select id="commentCategory" aria-label="批注类型"><option>内容</option><option>节奏</option><option>字幕</option><option>画面</option><option>声音</option></select><button class="button primary" id="saveComment" type="submit">保存批注<span data-icon="arrow"></span></button></div>
+            <p class="composer-hint"><span data-icon="lock"></span>保存在本地。保存批注后，在对话里让我处理。</p>
+          </form>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="projectDialog"><form id="projectForm" class="dialog-content"><div class="dialog-heading"><div><span class="eyebrow">NEW PROJECT</span><h2>新建一份作品</h2></div><button class="icon-button" type="button" data-close="projectDialog" aria-label="关闭" data-icon="close"></button></div><label class="field-label" for="newTitle">作品名称</label><input id="newTitle" maxlength="100" required placeholder="例如：策略跑输了，我为什么还在坚持"><label class="field-label" for="newBrief">本期主旨 <span>选填</span></label><textarea id="newBrief" rows="3" maxlength="3000" placeholder="写下已经确定的方向，或者留待稍后补充。"></textarea><div class="dialog-footer"><button class="button secondary" type="button" data-close="projectDialog">取消</button><button class="button primary" type="submit">创建作品<span data-icon="arrow"></span></button></div></form></dialog>
+
+  <dialog id="importDialog"><form id="importForm" class="dialog-content"><div class="dialog-heading"><div><span class="eyebrow">ADD A VERSION</span><h2>添加视频版本</h2></div><button class="icon-button" type="button" data-close="importDialog" aria-label="关闭" data-icon="close"></button></div><div class="form-grid"><div><label class="field-label" for="importStage">所属阶段</label><select id="importStage"><option value="3">03 原始素材</option><option value="4">04 粗剪审核</option><option value="5">05 精剪审核</option><option value="6">06 发布定稿</option></select></div><div><label class="field-label" for="importLabel">版本名称</label><input id="importLabel" maxlength="200" placeholder="例如：粗剪 v2"></div></div><div class="import-modes"><button type="button" class="active" data-mode="file">选择文件</button><button type="button" data-mode="path">本机路径引用</button></div><div id="fileMode"><label class="drop-zone" id="dropZone" for="videoFile"><span data-icon="upload"></span><strong id="fileLabel">点击选择，或拖入视频文件</strong><small>MP4 / MOV / M4V / WebM · 文件会复制到本地素材区</small></label><input type="file" id="videoFile" accept="video/mp4,video/quicktime,video/webm,.m4v" hidden></div><div id="pathMode" hidden><label class="field-label" for="videoPath">视频的完整路径</label><input id="videoPath" placeholder="C:\素材\我的视频.mp4"><p class="field-help">只建立文件引用，不移动或复制原片。请保留原文件的位置。</p></div><div class="import-progress" id="importProgress" hidden><div id="importProgressBar"></div><span id="importProgressText">正在准备…</span></div><div class="dialog-footer"><span class="field-help">每个新版本都从待审核开始。</span><button class="button primary" id="importSubmit" type="submit"><span data-icon="plus"></span>添加到作品</button></div></form></dialog>
+
+  <dialog id="reviewDialog"><form id="reviewForm" class="dialog-content"><div class="dialog-heading"><div><span class="eyebrow">STAGE REVIEW</span><h2 id="reviewDialogTitle">通过本阶段</h2></div><button type="button" class="icon-button" data-close="reviewDialog" aria-label="关闭" data-icon="close"></button></div><p id="reviewDialogDescription" class="dialog-description"></p><label class="field-label" for="reviewNote">审核说明 <span id="reviewNoteOptional">选填</span></label><textarea id="reviewNote" rows="4" maxlength="2000" placeholder="记下本轮结论，方便下一次接着做。"></textarea><div class="dialog-footer"><button type="button" class="button secondary" data-close="reviewDialog">取消</button><button type="submit" class="button primary" id="reviewSubmit">确认通过</button></div></form></dialog>
+
+  <dialog id="historyDialog" class="wide-dialog"><div class="dialog-content"><div class="dialog-heading"><div><span class="eyebrow">REVIEW HISTORY</span><h2>审核记录</h2></div><button class="icon-button" data-close="historyDialog" aria-label="关闭" data-icon="close"></button></div><div id="historyList" class="history-list"></div></div></dialog>
+  <dialog id="exportDialog"><div class="dialog-content"><div class="dialog-heading"><div><span class="eyebrow">EXPORT FEEDBACK</span><h2>把反馈带进下一轮</h2></div><button class="icon-button" data-close="exportDialog" aria-label="关闭" data-icon="close"></button></div><p class="dialog-description">包含各版本的批注、时间点、处理状态和审核结论。</p><div class="export-options"><a id="exportMarkdown" class="export-card"><span data-icon="file"></span><strong>可读反馈清单</strong><small>Markdown · 方便阅读与交给 AI 处理</small><span data-icon="download"></span></a><a id="exportJson" class="export-card"><span data-icon="layers"></span><strong>完整结构化记录</strong><small>JSON · 保留版本 ID、时间轴和审核历史</small><span data-icon="download"></span></a></div></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
