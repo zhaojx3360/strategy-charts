@@ -1,4 +1,5 @@
 import { createPlanning, stageComplete } from './planning.js';
+import { createFolderDialog, videoOrder, materialTime, materialDate } from './folder-import.js';
 const paths = {
   film: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v16M16 4v16M3 9h5m-5 6h5m8-6h5m-5 6h5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -148,7 +149,7 @@ function render() {
     $('timeDisplay').innerHTML = `00:00 <i>/</i> ${time(v?.duration)}`;
   }
   $('versionCount').textContent = p?.versions.length || 0;
-  $('versionList').innerHTML = [...(p?.versions || [])].reverse().map(item => `<button class="version-card${item.id === versionId ? ' active' : ''}" data-version="${item.id}" aria-pressed="${item.id === versionId}"><div class="version-thumb">${item.posterUrl ? `<img src="${item.posterUrl}" alt="${esc(item.label)}预览" loading="lazy">` : ''}<span class="duration">${time(item.duration)}</span>${item.id === versionId ? `<span class="selected-check">${icon('check')}</span>` : ''}</div><div class="version-caption"><strong>${esc(item.label)}</strong><small><span class="tiny-dot" style="background:${item.review.status === 'approved' ? 'var(--green)' : '#818b99'}"></span>${statusNames[item.review.status]}<span>·</span>${stageNames[item.stage]}</small></div></button>`).join('') + (p ? `<button class="version-add" id="addVersionCard">${icon('plus')}添加版本</button>` : '');
+  $('versionList').innerHTML = videoOrder(p?.versions || []).map(item => `<button class="version-card${item.id === versionId ? ' active' : ''}" data-version="${item.id}" aria-pressed="${item.id === versionId}"><div class="version-thumb">${item.posterUrl ? `<img src="${item.posterUrl}" alt="${esc(item.label)}预览" loading="lazy">` : ''}<span class="duration">${time(item.duration)}</span>${item.id === versionId ? `<span class="selected-check">${icon('check')}</span>` : ''}</div><div class="version-caption"><strong>${esc(item.label)}</strong><small><span class="tiny-dot" style="background:${item.review.status === 'approved' ? 'var(--green)' : '#818b99'}"></span>${statusNames[item.review.status]}<span>·</span>${stageNames[item.stage]}</small>${item.stage === 3 ? `<small class="material-time" title="${esc(materialTime(item)?.timeLabel || '旧素材未记录拍摄时间')}">${materialTime(item) ? esc(materialDate(materialTime(item).sortAt)) + (materialTime(item).timeSource === 'modified' ? ' · 备用时间' : '') : '未记录拍摄时间'}</small>` : ''}</div></button>`).join('') + (p ? `<button class="version-add" id="addVersionCard">${icon('plus')}添加版本</button>` : '');
   const open = p?.comments.filter(c => c.versionId === versionId && !c.resolved).length || 0;
   $('reviewSummaryTitle').textContent = !v ? '这一阶段还没有视频' : v.review.status === 'approved' ? `${stageNames[v.stage]}已通过` : v.review.status === 'changes_requested' ? '等待下一轮修改' : `正在审核：${v.label}`;
   $('reviewSummaryText').textContent = !v ? '添加对应的视频版本，再开始预览与审核。' : v.review.note || (open ? `还有 ${open} 条批注待处理，完成后可通过本阶段。` : '确认内容与视听效果后，可以通过本阶段。');
@@ -226,7 +227,9 @@ function showReview(status) {
   $('reviewDialog').showModal();
 }
 
-const planning = createPlanning({ getProject: project, api, reload: () => loadWorkspace({ keepEmptyStage: true }), selectStage, showImport, toast, safe, esc, icon });
+const folders = createFolderDialog({ getProject: project, api, esc, safe, icon, reload: async firstVersion => { stashDraft(); await loadWorkspace(firstVersion ? { versionId: firstVersion } : { keepEmptyStage: true }); restoreDraft(); } });
+function showFolderImport() { $('importDialog').close(); folders.show(); }
+const planning = createPlanning({ getProject: project, api, reload: () => loadWorkspace({ keepEmptyStage: true }), selectStage, showImport, showFolderImport, toast, safe, esc, icon });
 paintIcons();
 document.addEventListener('click', safe(async event => {
   const target = event.target.closest('button, a'); if (!target) return;
@@ -243,6 +246,7 @@ document.addEventListener('click', safe(async event => {
     await loadWorkspace({ keepEmptyStage: true }); toast(comment.resolved ? '批注已恢复为待处理。' : '已标为处理完成。');
   }
   if (target.id === 'addVersionCard') showImport();
+  if (target.id === 'importFolderButton') showFolderImport();
 }));
 $('newProject').onclick = () => { $('projectForm').reset(); $('projectDialog').showModal(); };
 $('projectForm').onsubmit = safe(async event => {

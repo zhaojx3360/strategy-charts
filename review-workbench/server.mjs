@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { VALUE_FIELDS, OUTLINE_CHECKS } from './public/creative-standards.js';
+import { createFolderImporter, pathKey, fingerprint, captureTime } from './folder-import.mjs';
 
 const runFile = promisify(execFile);
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -69,11 +70,11 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
   async function probe(filePath, versionId) {
     let info = {};
     try {
-      const { stdout } = await runFile(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type,width,height', '-of', 'json', filePath], { timeout: 20000, windowsHide: true });
+      const { stdout } = await runFile(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_entries', 'format=duration:format_tags:stream=codec_type,width,height:stream_tags', '-of', 'json', filePath], { timeout: 20000, windowsHide: true });
       const parsed = JSON.parse(stdout);
       const video = parsed.streams?.find(s => s.codec_type === 'video');
       if (!video) throw fail(400, '这个文件没有可用的视频轨道。');
-      info = { duration: Number(parsed.format?.duration || 0), width: video.width, height: video.height };
+      info = { duration: Number(parsed.format?.duration || 0), width: video.width, height: video.height, mediaTime: captureTime(parsed, fs.statSync(filePath)) };
     } catch (error) {
       if (error.status) throw error;
       if (error.code !== 'ENOENT') throw fail(400, '视频无法读取，请检查文件是否完整，建议使用 MP4（H.264）格式。');
@@ -94,14 +95,24 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     if (!fs.statSync(filePath).isFile()) throw fail(400, '请选择一个视频文件。');
     const versionId = id();
     const info = await probe(filePath, versionId);
+    if (options.expectedFingerprint && fingerprint(fs.statSync(filePath)) !== options.expectedFingerprint) {
+      if (info.posterPath) fs.rmSync(info.posterPath, { force: true });
+      throw fail(409, '文件在导入期间发生变化，请重新扫描。');
+    }
     return change(state => {
       const project = projectIn(state, projectId);
+      if (options.deduplicate) {
+        const existing = project.versions.find(v => v.stage === stage && pathKey(v.filePath) === pathKey(filePath));
+        if (existing) { if (info.posterPath) fs.rmSync(info.posterPath, { force: true }); return { skipped: true, version: existing }; }
+      }
       const version = { id: versionId, label: clean(options.label) || `${STAGES.find(s => s.id === stage).name} v${project.versions.filter(v => v.stage === stage).length + 1}`, stage, filePath, originalName: clean(options.originalName || path.basename(filePath)), size: fs.statSync(filePath).size, createdAt: now(), review: { status: 'pending', note: '', at: null }, ...info };
+      if (options.material) version.material = options.material;
       project.versions.push(version);
       record(project, 'version_added', version, `添加版本：${version.label}`);
-      return version;
+      return options.deduplicate ? { skipped: false, version } : version;
     });
   }
+  const folders = createFolderImporter({ readProject: projectId => projectIn(read(), projectId), addVersion });
   function send(res, status, data) {
     const body = JSON.stringify(data);
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
@@ -137,7 +148,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     const url = new URL(req.url, `http://${host}`);
     const parts = url.pathname.split('/').filter(Boolean);
     try {
-      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.2.0', dataDir }); return; }
+      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.3.0', dataDir }); return; }
       if (req.method === 'GET' && url.pathname === '/api/workspace') { send(res, 200, publicState(read())); return; }
       if (req.method === 'POST' && url.pathname === '/api/projects') {
         const body = await jsonBody(req);
@@ -223,6 +234,18 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
           });
           send(res, 200, { planning }); return;
         }
+        if (req.method === 'POST' && parts[3] === 'folder-scan') {
+          const scan = folders.start(projectId, await jsonBody(req)); send(res, 202, { scan }); return;
+        }
+        if (req.method === 'GET' && parts[3] === 'folder-scan' && parts[4]) {
+          send(res, 200, { scan: folders.status(projectId, parts[4]) }); return;
+        }
+        if (req.method === 'DELETE' && parts[3] === 'folder-scan' && parts[4]) {
+          send(res, 200, folders.cancel(projectId, parts[4])); return;
+        }
+        if (req.method === 'POST' && parts[3] === 'folder-import') {
+          const result = await folders.importEntry(projectId, await jsonBody(req)); send(res, result.skipped ? 200 : 201, result); return;
+        }
         if (req.method === 'POST' && parts[3] === 'import-path') {
           const body = await jsonBody(req);
           if (!body.filePath || !fs.existsSync(body.filePath)) throw fail(400, '找不到该文件，请检查完整路径。');
@@ -295,7 +318,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
             const checks = Object.entries(OUTLINE_CHECKS).map(([key, label]) => `- [${p.outline.checklist?.[key] ? 'x' : ' '}] ${label}`).join('\n');
             body = `# ${project.title} 制作记录\n\n导出时间：${report.exportedAt}\n\n${report.notice}\n\n## 自由想法\n\n${p.ideas || '尚未填写'}\n\n## 已选方向\n\n${selected ? `${selected.title}\n\n主旨：${selected.premise}\n\n矛盾：${selected.conflict}\n\n观点：${selected.viewpoint}\n\n${valueSummary}` : '尚未确认'}\n\n## 口播提纲（${p.outline.status}）\n\n${p.outline.text || '尚未填写'}\n\n审核意见：${p.outline.note || '无'}\n\n### 内容自检\n\n${checks}\n\n## 录制备忘\n\n${p.recording.notes || '无'}\n\n`;
             for (const v of project.versions) {
-              body += `## ${v.label}\n\n- 阶段：${STAGES.find(s => s.id === v.stage)?.name}\n- 原文件：${v.filePath}\n- 版本 ID：${v.id}\n- 审核：${v.review.status}\n- 说明：${v.review.note || '无'}\n\n`;
+              body += `## ${v.label}\n\n- 阶段：${STAGES.find(s => s.id === v.stage)?.name}\n- 原文件：${v.filePath}\n- 版本 ID：${v.id}\n- 审核：${v.review.status}\n- 说明：${v.review.note || '无'}\n${v.material ? `- 素材次序：${v.material.order}\n- 排序时间：${v.material.sortAt}（${v.material.timeLabel}${v.material.timezoneAssumed ? '，无时区按北京时间解释' : ''}）\n` : ''}\n`;
               const comments = project.comments.filter(c => c.versionId === v.id);
               body += comments.length ? comments.map(c => `- [${c.resolved ? 'x' : ' '}] ${stamp(c.time)}${c.end === null ? '' : `～${stamp(c.end)}`} · ${c.category}：${c.text}`).join('\n') + '\n\n' : '暂无批注。\n\n';
             }
@@ -310,7 +333,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
         if (!file) throw fail(404, '暂无封面。');
         streamFile(req, res, file, TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'); return;
       }
-      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/creative-standards.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
+      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/folder-import.js', '/creative-standards.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
         const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'");
