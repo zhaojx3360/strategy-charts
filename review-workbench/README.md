@@ -123,6 +123,19 @@ agent 只写入候选与提纲，不能代替用户选择方向或通过真实�
 
 ## 验证与本地开发
 
+### 可复用精剪与发布后清理（2026-10-18）
+
+`scripts/finish_video.py` 已从实际精剪流程提取到源码，支持校对后的大字短句字幕、暖黄/珊瑚/蓝色重点、引用样式、短入场、上方提示及轻微推近。接受人工核对的画面段落，包括干净视频保留段与定格图；声音全程复制已审成片的完整AAC流，不修改语速、内容或审核状态。输入先验SHA-256，输出拒绝覆盖，完成后检查完整解码、帧数、时间与音频流一致性；验证通过即删除本次生成的大体积临时图片视频，只留小日志和结果。操作后仍需抽看字幕、语意与拼接，并检查浏览器播放。
+
+```powershell
+python scripts/finish_video.py C:/素材/本期/精剪_v1/finish-manifest.json --threads 6
+python test/test_finish_video.py
+```
+
+清单含 `outputName`（同目录新MP4）、`audioFile`（已审AAC成片）、`fps`、`size`、`inputs`（每个输入的`filePath/sha256`）、有序 `segments`、`captions`，可选 `overlays/pushIns/theme/clips`。视频段含 `kind:copy/filePath/start/duration`，静帧段含 `kind:still/filePath/duration`；时长按帧率对齐，总时长应与已审声音相同。字幕项含 `start/end/lines`，最多两行，默认每行11字；可选 `emphasis`（一段原文字词）、`color:yellow|coral|blue`、`style:quote`、`animate:true`。主题默认按720宽画面主字号56、重点60缩放，可配置字体、字号、底部边距及每行字数；上方提示项含 `start/end/lines`、可选 `position/fontSize`；推近项含 `start/end/amount`（默认0.026）。输出ASS、SRT、`finish-result.json`。有旧烧录字幕的底片须先核对干净画面的准确映射，不能重复叠字或丢失已确认的补录与勘误。合成测试使用隔离小视频，检查完整AAC流保留、字幕生成、定格拼接、缓存收尾、输入保护和拒绝覆盖。
+
+用户选择视频发布后自行删除整期作品目录。发布确认后，先把通用工具与经验保存到本源码和长期知识库，把必要的作品结果、用户反馈与发布链接记入台账；不要求永久保留本期转写、逐帧映射、检查截图、源素材或导出版本。制作与审核期间继续保留原片和旧版，待用户实际发布后再按其决定清理。知识库、源码和 `REVIEW_DATA_DIR` 在作品目录之外，删除本期目录不会删除它们；但路径引用的历史视频会不可播放，单靠批注和摘要不能恢复原片或保证精确回剪。当前没有自动检测发布、删除或将媒体标记为已归档的功能，不把本地第6步通过当作平台已发布。目录外原片、录音和应用媒体不会随作品目录一起删除。
+
 ### 本机粗剪脚本（2026-10-18）
 
 `scripts/transcribe_footage.py` 将单个作品的 API 快照按原片备用排序转写，输出词级时间与静音检测结果。使用已缓存的 faster-whisper 模型，CPU int8，不下载模型或上传音视频；本机需已安装 faster-whisper、FFmpeg 和 FFprobe。`--prompt` 可填本期专用词。缓存核对源文件大小、修改时间、模型与提示词，变化后重新转写。`scripts/inspect_footage.py` 输出逐段抽样画面与技术信息，当前字体路径用于 Windows。静音检测和自动转写只辅助定位，不能直接决定删减或生成准确字幕。
