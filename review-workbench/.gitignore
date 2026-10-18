@@ -2,3 +2,4 @@ node_modules/
 *.log
 .runtime/
 test-results/
+__pycache__/

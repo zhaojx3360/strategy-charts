@@ -107,6 +107,23 @@ agent 只写入候选与提纲，不能代替用户选择方向或通过真实�
 
 ## 验证与本地开发
 
+### 本机粗剪脚本（2026-10-18）
+
+`scripts/transcribe_footage.py` 将单个作品的 API 快照按原片备用排序转写，输出词级时间与静音检测结果。使用已缓存的 faster-whisper 模型，CPU int8，不下载模型或上传音视频；本机需已安装 faster-whisper、FFmpeg 和 FFprobe。`--prompt` 可填本期专用词。缓存核对源文件大小、修改时间、模型与提示词，变化后重新转写。`scripts/inspect_footage.py` 输出逐段抽样画面与技术信息，当前字体路径用于 Windows。静音检测和自动转写只辅助定位，不能直接决定删减或生成准确字幕。
+
+`scripts/render_rough_cut.py` 根据人工核对的 `edit-manifest.json` 真正渲染合并视频，生成原片到成片的时间映射；`scripts/validate_rough_cut.py` 对成片完整解码、核对声画时长、测量响度并复核原文件 SHA-256。脚本不写工作区、不改批注或审核状态。制作快照、路径、转写、剪辑决定及媒体均存仓库外的本机素材目录。
+
+```powershell
+python scripts/transcribe_footage.py C:/素材/本期/作品快照.json C:/素材/本期/转写 --model small --threads 8
+python scripts/inspect_footage.py C:/素材/本期/作品快照.json C:/素材/本期/检查
+python scripts/render_rough_cut.py C:/素材/本期/粗剪_v1/edit-manifest.json --threads 6
+python scripts/validate_rough_cut.py C:/素材/本期/粗剪_v1/render-result.json
+```
+
+快照应取 `GET /api/workspace` 中单个作品对象，包含当前有效 `versions`。清单顶层含 `fps`（默认30）、`size`（默认720×1280）、`outputName` 和按最终顺序排列的 `clips`；每段须含 `order`、`versionId`、`filePath`、`duration`、`sourceSize`、`sourceMtimeNs`、`sourceSha256`、`keep`。`keep` 为原片秒数的有序不重叠半开区间，并按输出帧率对齐。根据实际内容选区间，不用静音阈值一键删除所有停顿。
+
+渲染以 H.264/AAC 输出，统一尺寸和采样率，切口加8毫秒音频淡入淡出，再做双遍响度归一化（dual-mono -16 LUFS、目标真峰值 -1.5 dBTP）。当前用于含视频和音频的口播原片；横竖屏、旋转、无音轨素材须先核对适配，不能直接套用。分段缓存仅在源文件统计与清单签名一致时复用；实际交付后应固定该输出文件，下一版使用新目录和新文件，避免覆盖已被工作区引用的版本。每版仍需检查关键语句切口、画面和浏览器可播放性，再通过路径导入接口保存为新的待审版本。
+
 运行 `node server.mjs` 启动开发服务，运行 `npm test` 执行集成检查。测试使用隔离的临时资料目录，不改实际项目记录。文件夹检查使用 FFmpeg 生成的小视频，覆盖元数据排序、备用时间、损坏文件、重复与并发重试、文件变化和持久化。
 
 演示视频由 `scripts/create_demo.py` 使用 Pillow 和 FFmpeg 生成，均明确标注为演示。首次运行测试前需有演示视频，生成脚本不会覆盖已有作品。
