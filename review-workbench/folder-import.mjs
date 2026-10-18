@@ -42,10 +42,10 @@ export function createFolderImporter({ readProject, addVersion }) {
     scan.touched = Date.now(); return scan;
   }
   function duplicate(projectId, filePath) {
-    return readProject(projectId).versions.find(v => v.stage === 3 && pathKey(v.filePath) === pathKey(filePath));
+    return readProject(projectId).versions.find(v => !v.removedAt && v.stage === 3 && pathKey(v.filePath) === pathKey(filePath));
   }
   function view(scan) {
-    const existing = new Set(readProject(scan.projectId).versions.filter(v => v.stage === 3).map(v => pathKey(v.filePath)));
+    const existing = new Set(readProject(scan.projectId).versions.filter(v => !v.removedAt && v.stage === 3).map(v => pathKey(v.filePath)));
     return { ...scan, entries: scan.entries.map(({ fingerprint: ignored, ...entry }) => ({ ...entry, duplicate: existing.has(pathKey(entry.filePath)) })) };
   }
   async function scanFolder(scan) {

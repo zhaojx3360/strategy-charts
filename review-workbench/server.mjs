@@ -50,12 +50,36 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     return project;
   }
   function versionIn(project, versionId) {
-    const version = project.versions.find(v => v.id === versionId);
+    const version = project.versions.find(v => v.id === versionId && !v.removedAt);
     if (!version) throw fail(404, '找不到这个视频版本。');
     return version;
   }
-  function publicState(state) {
-    return { ...state, stages: STAGES, dataDir, projects: state.projects.map(p => ({ ...p, planning: planningIn(p), versions: p.versions.map(v => ({ ...v, available: fs.existsSync(v.filePath), url: `/media/${v.id}`, posterUrl: v.posterPath && fs.existsSync(v.posterPath) ? `/poster/${v.id}` : null })) })) };
+  function publicProject(p) {
+    const active = p.versions.filter(v => !v.removedAt), activeIds = new Set(active.map(v => v.id));
+    return { ...p, planning: planningIn(p),
+      versions: active.map(v => ({ ...v, available: fs.existsSync(v.filePath), url: `/media/${v.id}`, posterUrl: v.posterPath && fs.existsSync(v.posterPath) ? `/poster/${v.id}` : null })),
+      comments: p.comments.filter(c => activeIds.has(c.versionId)),
+      removedVersions: p.versions.filter(v => v.removedAt).map(v => ({ id: v.id, label: v.label, originalName: v.originalName, stage: v.stage, size: v.size, removedAt: v.removedAt, createdAt: v.createdAt, review: v.review, commentCount: p.comments.filter(c => c.versionId === v.id).length })) };
+  }
+  function publicState(state) { return { ...state, stages: STAGES, dataDir, projects: state.projects.map(publicProject) }; }
+  function moveVersions(projectId, versionIds, restore = false) {
+    if (!Array.isArray(versionIds) || !versionIds.length || versionIds.length > 2000 || versionIds.some(v => typeof v !== 'string')) throw fail(400, '请选择 1 到 2000 个视频。');
+    return change(state => {
+      const project = projectIn(state, projectId);
+      const versions = [...new Set(versionIds)].map(versionId => {
+        const version = project.versions.find(v => v.id === versionId);
+        if (!version) throw fail(404, '有视频已不在这份作品中，请刷新后重试。');
+        return version;
+      });
+      const changed = [];
+      for (const version of versions) {
+        if (restore ? !version.removedAt : Boolean(version.removedAt)) continue;
+        if (restore) delete version.removedAt; else version.removedAt = now();
+        record(project, restore ? 'version_restored' : 'version_removed', version, `${restore ? '恢复视频' : '从作品移除视频'}：${version.label}`);
+        changed.push(version.id);
+      }
+      return { versionIds: changed, count: changed.length };
+    });
   }
   function record(project, action, version, detail) {
     project.updatedAt = now();
@@ -102,7 +126,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     return change(state => {
       const project = projectIn(state, projectId);
       if (options.deduplicate) {
-        const existing = project.versions.find(v => v.stage === stage && pathKey(v.filePath) === pathKey(filePath));
+        const existing = project.versions.find(v => !v.removedAt && v.stage === stage && pathKey(v.filePath) === pathKey(filePath));
         if (existing) { if (info.posterPath) fs.rmSync(info.posterPath, { force: true }); return { skipped: true, version: existing }; }
       }
       const version = { id: versionId, label: clean(options.label) || `${STAGES.find(s => s.id === stage).name} v${project.versions.filter(v => v.stage === stage).length + 1}`, stage, filePath, originalName: clean(options.originalName || path.basename(filePath)), size: fs.statSync(filePath).size, createdAt: now(), review: { status: 'pending', note: '', at: null }, ...info };
@@ -148,7 +172,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     const url = new URL(req.url, `http://${host}`);
     const parts = url.pathname.split('/').filter(Boolean);
     try {
-      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.3.0', dataDir }); return; }
+      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.4.0', dataDir }); return; }
       if (req.method === 'GET' && url.pathname === '/api/workspace') { send(res, 200, publicState(read())); return; }
       if (req.method === 'POST' && url.pathname === '/api/projects') {
         const body = await jsonBody(req);
@@ -162,6 +186,13 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
       if (parts[0] === 'api' && parts[1] === 'projects' && parts[2]) {
         const projectId = parts[2];
         projectIn(read(), projectId);
+        if (req.method === 'DELETE' && parts[3] === 'versions' && parts[4] && parts.length === 5) {
+          send(res, 200, moveVersions(projectId, [parts[4]])); return;
+        }
+        if (req.method === 'POST' && parts[3] === 'versions' && ['remove', 'restore'].includes(parts[4]) && parts.length === 5) {
+          const body = await jsonBody(req);
+          send(res, 200, moveVersions(projectId, body.versionIds, parts[4] === 'restore')); return;
+        }
         if (req.method === 'PATCH' && parts[3] === 'planning') {
           const body = await jsonBody(req);
           const planning = change(state => {
@@ -307,7 +338,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
           }); send(res, 200, { review }); return;
         }
         if (req.method === 'GET' && parts[3] === 'export') {
-          const project = projectIn(read(), projectId);
+          const project = publicProject(projectIn(read(), projectId));
           const report = { exportedAt: now(), project, notice: '批注时间属于各自的 versionId；不得直接套用到其他剪辑版本。' };
           const format = url.searchParams.get('format') || 'json';
           let body = JSON.stringify(report, null, 2);
@@ -327,13 +358,13 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
         }
       }
       if (['GET', 'HEAD'].includes(req.method) && ['media', 'poster'].includes(parts[0])) {
-        const state = read(); const version = state.projects.flatMap(p => p.versions).find(v => v.id === parts[1]);
+        const state = read(); const version = state.projects.flatMap(p => p.versions).find(v => v.id === parts[1] && !v.removedAt);
         if (!version) throw fail(404, '视频版本不存在。');
         const file = parts[0] === 'poster' ? version.posterPath : version.filePath;
         if (!file) throw fail(404, '暂无封面。');
         streamFile(req, res, file, TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'); return;
       }
-      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/folder-import.js', '/creative-standards.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
+      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/folder-import.js', '/video-manager.js', '/creative-standards.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
         const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'");

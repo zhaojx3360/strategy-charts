@@ -23,7 +23,7 @@
 
     <main class="workspace">
       <header class="workspace-header"><div class="breadcrumb">工作空间 <span>/</span> 作品制作</div><div class="header-actions"><span class="local-badge"><span class="online-dot"></span>LOCAL WORKSPACE</span><button class="button ghost" id="historyButton"><span data-icon="history"></span>审核记录</button><button class="button ghost" id="exportButton"><span data-icon="export"></span>导出记录</button></div></header>
-      <div class="workspace-title"><div><div class="eyebrow" id="projectEyebrow">VIDEO REVIEW</div><h1 id="projectTitle">正在打开工作台</h1><p id="projectBrief">每一版修改，都有迹可循。</p></div><button class="button primary" id="importButton"><span data-icon="plus"></span>添加视频版本</button></div>
+      <div class="workspace-title"><div><div class="eyebrow" id="projectEyebrow">VIDEO REVIEW</div><h1 id="projectTitle">正在打开工作台</h1><p id="projectBrief">每一版修改，都有迹可循。</p></div><div class="title-video-actions"><button class="button secondary" id="restoreVideosTop" type="button" hidden>恢复已移除视频</button><button class="button primary" id="importButton"><span data-icon="plus"></span>添加视频版本</button></div></div>
       <nav class="stage-navigation" id="stageNavigation" aria-label="制作阶段"></nav>
 
       <div class="connection-note"><span data-icon="lock"></span><span>本地工作区 · 需要 AI 时，复制请求到当前对话；结果保存后刷新查看。</span></div>
@@ -44,7 +44,7 @@
             </div>
           </div>
 
-          <section class="versions-section"><div class="section-heading"><h2>视频与版本 <span id="versionCount">0</span></h2><span>原片从早到晚 · 剪辑版独立审核</span></div><div class="version-list" id="versionList"></div></section>
+          <section class="versions-section"><div class="section-heading version-heading"><h2>视频与版本 <span id="versionCount">0</span></h2><div class="version-actions"><button class="text-link" id="removeCurrentVideo" type="button">移除当前视频</button><button class="button secondary" id="manageVideos" type="button">管理视频<span id="removedVideoCount"></span></button></div></div><p class="version-order-hint">原片从早到晚 · 剪辑版独立审核 · 移除后可恢复，原文件保留</p><div class="version-list" id="versionList"></div></section>
           <section class="review-summary"><div class="summary-icon" data-icon="shield"></div><div><strong id="reviewSummaryTitle">准备开始审核</strong><p id="reviewSummaryText">预览视频，在右侧留下意见。</p></div><div class="review-buttons"><button class="button secondary" id="requestChanges"><span data-icon="edit"></span>需要修改</button><button class="button approve" id="approveStage"><span data-icon="check"></span>通过本阶段</button></div></section>
           <div class="workspace-footnote"><span><kbd>空格</kbd> 播放 / 暂停 <kbd>← →</kbd> 跳转 <kbd>C</kbd> 添加批注</span><a id="downloadVideo" class="text-link" hidden><span data-icon="download"></span>下载当前版本</a></div>
         </section>
