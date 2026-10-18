@@ -138,6 +138,17 @@ python scripts/validate_rough_cut.py C:/素材/本期/粗剪_v1/render-result.js
 
 快照应取 `GET /api/workspace` 中单个作品对象，包含当前有效 `versions`。清单顶层含 `fps`（默认30）、`size`（默认720×1280）、`outputName` 和按最终顺序排列的 `clips`；每段须含 `order`、`versionId`、`filePath`、`duration`、`sourceSize`、`sourceMtimeNs`、`sourceSha256`、`keep`。`keep` 为原片秒数的有序不重叠半开区间，并按输出帧率对齐。根据实际内容选区间，不用静音阈值一键删除所有停顿。
 
+`scripts/render_voice_pickups.py` 用核对后的清单执行定格配音。先核验输入哈希，再将底片分成保留段与定格配音段，匹配新录音响度、给接点加短淡入淡出，合并 H.264/AAC 新版。它不会改工作区或批注状态。完成后同样运行 `validate_rough_cut.py`，后者会额外核验清单所列旧成片、补录音频等 `inputs`，并保留源素材检查。
+
+```powershell
+python scripts/render_voice_pickups.py C:/素材/本期/粗剪_v3/voice-manifest.json --threads 6
+python scripts/validate_rough_cut.py C:/素材/本期/粗剪_v3/render-result.json
+```
+
+定格配音清单含 `baseFile`、`baseVersionId`、`requestedVersionId`、`outputName`、`fps`、`size`、`sourceClips`、`inputs` 和有序 `segments`。`inputs` 每项为 `filePath/sha256`；保留段含 `kind:copy`、`baseStart/baseEnd/duration`；配音段含 `kind:freeze_voice`、原替换范围、新 `duration`、`audioFile/audioStart/audioEnd`、`freezeFile` 和 `subtitleFile`。静帧和 ASS 字幕先在独立版本目录准备好，字幕路径用该目录下的相对文件名；录音范围与定格时长按帧率对齐。`render-result.json` 的 `timeline` 逐段列出旧版范围和新片 `outputStart/outputEnd`，变长的替换段不能视为一比一视频映射。人物静帧须抽看，字幕须与实际录音核对。
+
+录音若绑定旧版，而新版已有应保留的修改，须先证明目标区间和声音对应关系一致，才能将选中录音应用于新版。无法证明时不能直接套时间点。最终播放检查、输入不变核验、完整新旧时间映射和处理说明完成后，再保存待审版本及落实批注。对短窗转写漏句或编码采样对齐差异，结合实际音频播放、对齐后的波形与上下文核实，不把自动识别结果当作声音缺失的唯一证据。
+
 渲染以 H.264/AAC 输出，统一尺寸和采样率，切口加8毫秒音频淡入淡出，再做双遍响度归一化（dual-mono -16 LUFS、目标真峰值 -1.5 dBTP）。当前用于含视频和音频的口播原片；横竖屏、旋转、无音轨素材须先核对适配，不能直接套用。分段缓存仅在源文件统计与清单签名一致时复用；实际交付后应固定该输出文件，下一版使用新目录和新文件，避免覆盖已被工作区引用的版本。每版仍需检查关键语句切口、画面和浏览器可播放性，再通过路径导入接口保存为新的待审版本。
 
 运行 `node server.mjs` 启动开发服务，运行 `npm test` 执行集成检查。测试使用隔离的临时资料目录，不改实际项目记录。文件夹检查使用 FFmpeg 生成的小视频，覆盖元数据排序、备用时间、损坏文件、重复与并发重试、文件变化和持久化。

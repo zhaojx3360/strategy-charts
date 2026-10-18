@@ -38,7 +38,16 @@ for clip in result["clips"]:
     unchanged = digest.hexdigest() == clip["sourceSha256"]
     assert unchanged, "Source file changed"
     source_checks.append({"versionId": clip["versionId"], "sha256Unchanged": unchanged})
+input_checks = []
+for item in result.get("inputs", []):
+    digest = hashlib.sha256()
+    with Path(item["filePath"]).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    assert digest.hexdigest() == item["sha256"], "A cut or voice input changed"
+    input_checks.append({"filePath": item["filePath"], "sha256Unchanged": True})
 check = {"fullDecodePassed": True, "expectedDuration": result["plannedDuration"], "actualDuration": float(probe["format"]["duration"]), "videoDuration": float(video["duration"]), "audioDuration": float(audio["duration"]), "width": video["width"], "height": video["height"], "fps": video["avg_frame_rate"], "videoCodec": video["codec_name"], "audioCodec": audio["codec_name"], "audioSampleRate": audio["sample_rate"], "channels": audio["channels"], "loudness": loudness, "sourceChecks": source_checks, "bytes": Path(output).stat().st_size}
 destination = result_path.parent / "validation.json"
+check["inputChecks"] = input_checks
 destination.write_text(json.dumps(check, ensure_ascii=False, indent=2), encoding="utf-8")
 print(json.dumps(check, ensure_ascii=False), flush=True)
