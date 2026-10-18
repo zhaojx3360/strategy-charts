@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { VALUE_FIELDS, OUTLINE_CHECKS } from './public/creative-standards.js';
 
 const runFile = promisify(execFile);
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +16,8 @@ const now = () => new Date().toISOString();
 const id = () => randomUUID();
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const clean = (value, limit = 200) => String(value ?? '').trim().slice(0, limit);
-const planningDefaults = () => ({ ideas: '', audience: '', duration: '3—5 分钟', ideasRevision: 0, topics: [], topicsIdeasRevision: null, topicRevision: 0, selectedTopicId: null, topicConfirmedAt: null, outlineHistory: [], outline: { text: '', revision: 0, status: 'draft', note: '', topicId: null, topicRevision: null }, recording: { notes: '', checklist: {} } });
+const planningDefaults = () => ({ ideas: '', audience: '', duration: '3—5 分钟', ideasRevision: 0, topics: [], topicsIdeasRevision: null, topicRevision: 0, selectedTopicId: null, topicConfirmedAt: null, outlineHistory: [], outline: { text: '', revision: 0, status: 'draft', note: '', topicId: null, topicRevision: null, checklist: {} }, recording: { notes: '', checklist: {} } });
+const outlineChecks = value => Object.fromEntries(Object.keys(OUTLINE_CHECKS).map(key => [key, value?.[key] === true]));
 function planningIn(project) {
   const defaults = planningDefaults();
   project.planning = { ...defaults, ...project.planning, outline: { ...defaults.outline, ...project.planning?.outline }, recording: { ...defaults.recording, ...project.planning?.recording } };
@@ -135,7 +137,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     const url = new URL(req.url, `http://${host}`);
     const parts = url.pathname.split('/').filter(Boolean);
     try {
-      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.1.0', dataDir }); return; }
+      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.2.0', dataDir }); return; }
       if (req.method === 'GET' && url.pathname === '/api/workspace') { send(res, 200, publicState(read())); return; }
       if (req.method === 'POST' && url.pathname === '/api/projects') {
         const body = await jsonBody(req);
@@ -153,7 +155,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
           const body = await jsonBody(req);
           const planning = change(state => {
             const project = projectIn(state, projectId), p = planningIn(project);
-            const invalidateOutline = () => { if (p.outline.text) p.outline.status = 'changes_requested'; };
+            const invalidateOutline = () => { if (p.outline.text) { p.outline.status = 'changes_requested'; p.outline.checklist = outlineChecks(); } };
             let detail;
             if (body.action === 'ideas') {
               const ideas = clean(body.ideas, 60000), audience = clean(body.audience, 300), duration = clean(body.duration, 100);
@@ -169,11 +171,25 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
               const fields = ['title', 'premise', 'conflict', 'viewpoint', 'reasons', 'missing'];
               const topics = body.topics.map((t, index) => {
                 if (!t || fields.some(k => typeof t[k] !== 'string' || !t[k].trim())) throw fail(400, '每个选题需要标题、主旨、矛盾、观点、理由和待补充内容。没有待补充内容可写“暂无”。');
-                return { id: id(), ...Object.fromEntries(fields.map(k => [k, clean(t[k], k === 'title' ? 200 : 3000)])), recommended: t.recommended === true, number: index + 1 };
+                if (VALUE_FIELDS.some(([key]) => t[key] !== undefined && typeof t[key] !== 'string')) throw fail(400, '观众价值与真实切入点请使用文字填写。');
+                return { id: id(), ...Object.fromEntries(fields.map(k => [k, clean(t[k], k === 'title' ? 200 : 3000)])), ...Object.fromEntries(VALUE_FIELDS.map(([key]) => [key, clean(t[key], 3000)])), recommended: t.recommended === true, number: index + 1 };
               });
               if (new Set(topics.map(t => t.title)).size !== 3) throw fail(400, '三个选题不能使用相同标题。');
               p.topics = topics; p.topicsIdeasRevision = p.ideasRevision; p.topicRevision++;
               p.selectedTopicId = null; p.topicConfirmedAt = null; invalidateOutline(); detail = '保存三个选题，等待选择';
+            } else if (body.action === 'topic-values') {
+              if (p.topicsIdeasRevision !== p.ideasRevision || body.topicRevision !== p.topicRevision) throw fail(409, '选题版本已变化，请刷新后再补充。');
+              const topic = p.topics.find(t => t.id === body.topicId);
+              if (!topic) throw fail(404, '找不到这个选题。');
+              if (VALUE_FIELDS.some(([key]) => typeof body[key] !== 'string')) throw fail(400, '请用文字填写观众价值、真实切入点和观众关系。');
+              const values = Object.fromEntries(VALUE_FIELDS.map(([key]) => [key, clean(body[key], 3000)]));
+              if (VALUE_FIELDS.some(([key]) => values[key] !== (topic[key] || ''))) {
+                const wasCurrent = outlineReady(p);
+                Object.assign(topic, values); p.topicRevision++;
+                if (topic.id === p.selectedTopicId) invalidateOutline();
+                else if (wasCurrent) p.outline.topicRevision = p.topicRevision;
+              }
+              detail = `补充观众价值与真实切入点：${topic.title}`;
             } else if (body.action === 'select-topic') {
               if (p.topicsIdeasRevision !== p.ideasRevision || !p.topics.some(t => t.id === body.topicId)) throw fail(409, '请先按当前想法保存三个选题。');
               if (p.selectedTopicId !== body.topicId) { p.selectedTopicId = body.topicId; invalidateOutline(); }
@@ -182,14 +198,19 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
               if (!topicReady(p) || body.topicId !== p.selectedTopicId || body.topicRevision !== p.topicRevision) throw fail(409, '选题已变化，请先确认当前选题，再保存对应提纲。');
               const text = clean(body.text, 60000); if (!text) throw fail(400, '提纲内容不能为空。');
               if (p.outline.text) p.outlineHistory.push({ ...p.outline });
-              p.outline = { text, revision: p.outline.revision + 1, status: 'pending', note: '', topicId: p.selectedTopicId, topicRevision: p.topicRevision, updatedAt: now() };
+              p.outline = { text, revision: p.outline.revision + 1, status: 'pending', note: '', topicId: p.selectedTopicId, topicRevision: p.topicRevision, checklist: outlineChecks(), updatedAt: now() };
               detail = `保存提纲 v${p.outline.revision}，等待审核`;
+            } else if (body.action === 'outline-checklist') {
+              if (!p.outline.text || !outlineReady(p) || body.outlineRevision !== p.outline.revision) throw fail(409, '提纲或选题已变化，请刷新并核对当前提纲。');
+              p.outline.checklist = outlineChecks(body.checklist);
+              detail = `保存提纲 v${p.outline.revision} 的内容自检`;
             } else if (body.action === 'outline-review') {
               if (!p.outline.text || !outlineReady(p)) throw fail(409, '这份提纲与当前选题不匹配，请重新保存提纲。');
               if (body.outlineRevision !== p.outline.revision) throw fail(409, '提纲版本已变化，请刷新后重新审核。');
               if (!['approved', 'changes_requested'].includes(body.status)) throw fail(400, '提纲审核状态不正确。');
               if (body.status === 'changes_requested' && !clean(body.note, 3000)) throw fail(400, '请写下提纲修改意见。');
               p.outline.status = body.status; p.outline.note = clean(body.note, 3000); p.outline.reviewedAt = now();
+              if (body.checklist !== undefined) p.outline.checklist = outlineChecks(body.checklist);
               detail = `${body.status === 'approved' ? '通过' : '退回'}提纲 v${p.outline.revision}${p.outline.note ? '：' + p.outline.note : ''}`;
             } else if (body.action === 'recording') {
               const allowed = ['audio', 'framing', 'facts', 'materials'];
@@ -270,7 +291,9 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
           if (format === 'md') {
             const stamp = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
             const p = planningIn(project), selected = p.topics.find(t => t.id === p.selectedTopicId);
-            body = `# ${project.title} 制作记录\n\n导出时间：${report.exportedAt}\n\n${report.notice}\n\n## 自由想法\n\n${p.ideas || '尚未填写'}\n\n## 已选方向\n\n${selected ? `${selected.title}\n\n主旨：${selected.premise}\n\n矛盾：${selected.conflict}\n\n观点：${selected.viewpoint}` : '尚未确认'}\n\n## 口播提纲（${p.outline.status}）\n\n${p.outline.text || '尚未填写'}\n\n审核意见：${p.outline.note || '无'}\n\n## 录制备忘\n\n${p.recording.notes || '无'}\n\n`;
+            const valueSummary = selected ? VALUE_FIELDS.map(([key, label]) => `${label}：${selected[key] || '待补充'}`).join('\n\n') : '';
+            const checks = Object.entries(OUTLINE_CHECKS).map(([key, label]) => `- [${p.outline.checklist?.[key] ? 'x' : ' '}] ${label}`).join('\n');
+            body = `# ${project.title} 制作记录\n\n导出时间：${report.exportedAt}\n\n${report.notice}\n\n## 自由想法\n\n${p.ideas || '尚未填写'}\n\n## 已选方向\n\n${selected ? `${selected.title}\n\n主旨：${selected.premise}\n\n矛盾：${selected.conflict}\n\n观点：${selected.viewpoint}\n\n${valueSummary}` : '尚未确认'}\n\n## 口播提纲（${p.outline.status}）\n\n${p.outline.text || '尚未填写'}\n\n审核意见：${p.outline.note || '无'}\n\n### 内容自检\n\n${checks}\n\n## 录制备忘\n\n${p.recording.notes || '无'}\n\n`;
             for (const v of project.versions) {
               body += `## ${v.label}\n\n- 阶段：${STAGES.find(s => s.id === v.stage)?.name}\n- 原文件：${v.filePath}\n- 版本 ID：${v.id}\n- 审核：${v.review.status}\n- 说明：${v.review.note || '无'}\n\n`;
               const comments = project.comments.filter(c => c.versionId === v.id);
@@ -287,7 +310,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
         if (!file) throw fail(404, '暂无封面。');
         streamFile(req, res, file, TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'); return;
       }
-      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
+      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/creative-standards.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
         const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'");

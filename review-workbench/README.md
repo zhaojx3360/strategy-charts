@@ -1,6 +1,6 @@
 # 见片 本地审片台
 
-截至 2026-10-16，版本 1.1.0。本地六阶段创作工作区，提供想法与选题、口播提纲、录制与素材、粗剪、精剪、定稿流程，以及视频预览、独立版本批注和审核。界面与服务无第三方运行时依赖，不调用 AI API，也不向云端上传素材。
+截至 2026-10-18，版本 1.2.0。本地六阶段创作工作区，提供想法与选题、口播提纲、录制与素材、粗剪、精剪、定稿流程，以及视频预览、独立版本批注和审核。选题卡与提纲请求已加入观众价值和真实表达标准。界面与服务无第三方运行时依赖，不调用 AI API，也不向云端上传素材。
 
 ## 打开
 
@@ -23,6 +23,16 @@
 
 想法变化后，旧选题不能再确认；换选题或修改提纲后，旧提纲的通过状态失效。保存新版提纲时保留旧版正文和当时的审核信息。未保存的输入暂存在当前浏览器；点击保存后的内容进入后端文件，才能被其他工具读取。
 
+## 观众价值与真实表达
+
+每张选题卡新增“观众能获得什么”“真实经历切入点”“观众为什么关心”。点击卡片上的编辑入口即可补充，保存后仍保留该选题的 ID 和已选方向。旧记录缺少这些字段时显示待补充；素材不足可以明确写待补问题，本期无需自曝也可说明，不自动生成用户经历。
+
+修改已选方向的补充会让提纲恢复需要修改，并清空本版自检；补充其他候选不会取消当前提纲审核。修改后仍保留旧提纲，可重新保存核对后的版本；视频审核独立保留。
+
+提纲页显示已选方向的三项约定，并提供四项内容自检：观众所得、真实依据、表达推进和结尾回应。勾选后点击保存自检，或随提纲审核一起保存。自检是辅助记录，不要求全部勾选才能审核，也不自动通过提纲。正文有未保存修改或选题关联变化时，保存自检会先保存提纲为待审新版。新提纲清空自检，旧版历史保留当时的记录。
+
+网页生成的选题、提纲和粗剪请求都会携带当前创作标准；选题请求要求返回三项新字段，提纲请求带上已选方向的具体约定。JSON 导出保留全部记录，Markdown 导出包含已选方向的观众价值与提纲自检。应用文案按知识库 2026-10-18 原则实现，原则主源继续由知识库维护。
+
 ## 与当前对话的衔接
 
 本网页与对话共享的是本机作品记录，不是已建立的消息通道。用户复制请求并发送后，agent 读取接口、完成这一阶段并写回，用户刷新即可查看，不必反复拷贝整段素材。也可用“导入回复”手动粘贴结果。网页不会把“已保存”显示成“AI 正在执行”。
@@ -32,10 +42,12 @@
 前期结果写入 `PATCH /api/projects/:id/planning`，请求 JSON 的 `action` 可为：
 
 - `ideas`：`ideas`、`audience`、`duration`，返回新的 `ideasRevision`。
-- `topics`：`ideasRevision` 必须等于当前版本；`topics` 必须有三个对象，字符串字段为 `title`、`premise`、`conflict`、`viewpoint`、`reasons`、`missing`，可有 `recommended` 布尔字段。
+- `topics`：`ideasRevision` 必须等于当前版本；`topics` 必须有三个对象，字符串字段为 `title`、`premise`、`conflict`、`viewpoint`、`reasons`、`missing`，可有 `recommended` 布尔字段。新请求还要求填写字符串 `audienceValue`、`authenticEntry`、`audienceConnection`；为兼容旧回复，接口允许省略并保存为空字符串，页面显示待补充。
+- `topic-values`：`topicId`、当前 `topicRevision`，以及 `audienceValue`、`authenticEntry`、`audienceConnection` 三个字符串。阻止过期修改；修改已选方向会让提纲重新核对。
 - `select-topic`：`topicId`，只允许当前想法对应的候选。
 - `outline`：`topicId`、`topicRevision`、`text`，必须匹配已选方向；保存为待审。
-- `outline-review`：`outlineRevision`、`status`（`approved` 或 `changes_requested`）、`note`；退回须附意见。
+- `outline-checklist`：当前 `outlineRevision`、`checklist`，键为 `audienceValue`、`authenticity`、`progression`、`takeaway`，值为布尔值；必须对应当前选题与提纲。
+- `outline-review`：`outlineRevision`、`status`（`approved` 或 `changes_requested`）、`note`；退回须附意见，可同时传入上述 `checklist`。
 - `recording`：`notes`、`checklist`（`audio`、`framing`、`facts`、`materials` 布尔字段）。
 
 agent 只写入候选与提纲，不能代替用户选择方向或通过真实作品。演示项目里的确认与审核仅用于 UI 验收。
