@@ -1,6 +1,7 @@
 import { createPlanning, stageComplete } from './planning.js';
 import { createFolderDialog, videoOrder, materialTime, materialDate } from './folder-import.js';
 import { createVideoManager } from './video-manager.js';
+import { createPickupUI } from './pickups.js';
 const paths = {
   film: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v16M16 4v16M3 9h5m-5 6h5m8-6h5m-5 6h5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -181,7 +182,7 @@ function render() {
   $('commentTime').disabled = $('captureTime').disabled = $('rangeToggle').disabled = !v;
   $('downloadVideo').hidden = !v;
   if (v) { $('downloadVideo').href = v.url; $('downloadVideo').download = v.originalName; }
-  renderComments(); updatePlayState();
+  renderComments(); updatePlayState(); pickupUI.render();
 }
 function renderComments() {
   const p = project(), comments = currentComments();
@@ -196,6 +197,7 @@ function renderComments() {
   }).join('') || `<div class="comments-empty">${icon(filter === 'resolved' ? 'check' : 'comment')}<strong>${filter === 'resolved' ? '暂时没有已处理批注' : filter === 'all' ? '这里还没有批注' : '没有待处理批注'}</strong><p>${version() ? '播放视频，在想调整的位置暂停，写下你的意见。' : '添加视频后，就可以在这里记录具体修改意见。'}</p></div>`;
   const v = version();
   $('commentMarkers').innerHTML = v?.duration ? p.comments.filter(c => c.versionId === v.id).map(c => `<button class="comment-marker${c.resolved ? ' resolved' : ''}" style="left:${Math.min(100, c.time / v.duration * 100)}%" data-jump="${c.id}" title="${time(c.time, true)} ${esc(c.text)}" aria-label="批注 ${time(c.time, true)}"></button>`).join('') : '';
+  pickupUI.decorateComments();
   document.querySelectorAll('[data-filter]').forEach(button => { const active = button.dataset.filter === filter; button.classList.toggle('active', active); button.setAttribute('aria-selected', String(active)); });
 }
 function updatePlayState() {
@@ -212,6 +214,7 @@ function jumpComment(commentId) {
   if (versionId !== c.versionId) selectVersion(c.versionId, c.time);
   else video.currentTime = Math.min(c.time, video.duration || c.time);
   selectedCommentId = c.id; renderComments();
+  pickupUI.showForComment(c.id);
 }
 function showImport() {
   if (!project()) { $('projectDialog').showModal(); return; }
@@ -257,6 +260,7 @@ const videoManager = createVideoManager({ getProject: project, api, esc, safe, i
 } });
 function showFolderImport() { $('importDialog').close(); folders.show(); }
 const planning = createPlanning({ getProject: project, api, reload: () => loadWorkspace({ keepEmptyStage: true }), selectStage, showImport, showFolderImport, toast, safe, esc, icon });
+const pickupUI = createPickupUI({ getProject: project, getVersion: version, selectVersion, api, reload: () => loadWorkspace({ keepEmptyStage: true }), esc, safe, toast, time, parseTime });
 paintIcons();
 document.addEventListener('click', safe(async event => {
   const target = event.target.closest('button, a'); if (!target) return;

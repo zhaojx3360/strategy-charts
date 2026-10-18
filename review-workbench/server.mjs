@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { VALUE_FIELDS, OUTLINE_CHECKS } from './public/creative-standards.js';
 import { createFolderImporter, pathKey, fingerprint, captureTime } from './folder-import.mjs';
+import { createPickups } from './pickups.mjs';
 
 const runFile = promisify(execFile);
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +60,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     return { ...p, planning: planningIn(p),
       versions: active.map(v => ({ ...v, available: fs.existsSync(v.filePath), url: `/media/${v.id}`, posterUrl: v.posterPath && fs.existsSync(v.posterPath) ? `/poster/${v.id}` : null })),
       comments: p.comments.filter(c => activeIds.has(c.versionId)),
+      pickups: pickups.publicList(p, activeIds),
       removedVersions: p.versions.filter(v => v.removedAt).map(v => ({ id: v.id, label: v.label, originalName: v.originalName, stage: v.stage, size: v.size, removedAt: v.removedAt, createdAt: v.createdAt, review: v.review, commentCount: p.comments.filter(c => c.versionId === v.id).length })) };
   }
   function publicState(state) { return { ...state, stages: STAGES, dataDir, projects: state.projects.map(publicProject) }; }
@@ -137,6 +139,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     });
   }
   const folders = createFolderImporter({ readProject: projectId => projectIn(read(), projectId), addVersion });
+  const pickups = createPickups({ read, change, projectIn, versionIn, record, mediaDir });
   function send(res, status, data) {
     const body = JSON.stringify(data);
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
@@ -172,7 +175,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     const url = new URL(req.url, `http://${host}`);
     const parts = url.pathname.split('/').filter(Boolean);
     try {
-      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.5.0', dataDir }); return; }
+      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.6.0', dataDir }); return; }
       if (req.method === 'GET' && url.pathname === '/api/workspace') { send(res, 200, publicState(read())); return; }
       if (req.method === 'POST' && url.pathname === '/api/projects') {
         const body = await jsonBody(req);
@@ -186,6 +189,12 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
       if (parts[0] === 'api' && parts[1] === 'projects' && parts[2]) {
         const projectId = parts[2];
         projectIn(read(), projectId);
+        if (parts[3] === 'pickups') {
+          if (req.method === 'POST' && parts.length === 4) { send(res, 201, { pickup: pickups.save(projectId, await jsonBody(req)) }); return; }
+          if (req.method === 'PATCH' && parts.length === 5) { send(res, 200, { pickup: pickups.save(projectId, await jsonBody(req), parts[4]) }); return; }
+          if (req.method === 'POST' && parts[5] === 'import-path' && parts.length === 6) { const body = await jsonBody(req); send(res, 201, { audio: await pickups.addAudio(projectId, parts[4], body.filePath) }); return; }
+          if (req.method === 'POST' && parts[5] === 'upload' && parts.length === 6) { send(res, 201, { audio: await pickups.upload(projectId, parts[4], req, clean(url.searchParams.get('fileName'), 240)) }); return; }
+        }
         if (req.method === 'DELETE' && parts[3] === 'versions' && parts[4] && parts.length === 5) {
           send(res, 200, moveVersions(projectId, [parts[4]])); return;
         }
@@ -352,11 +361,16 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
               body += `## ${v.label}\n\n- 阶段：${STAGES.find(s => s.id === v.stage)?.name}\n- 原文件：${v.filePath}\n- 版本 ID：${v.id}\n- 审核：${v.review.status}\n- 说明：${v.review.note || '无'}\n${v.material ? `- 素材次序：${v.material.order}\n- 排序时间：${v.material.sortAt}（${v.material.timeLabel}${v.material.timezoneAssumed ? '，无时区按北京时间解释' : ''}）\n` : ''}\n`;
               const comments = project.comments.filter(c => c.versionId === v.id);
               body += comments.length ? comments.map(c => `- [${c.resolved ? 'x' : ' '}] ${stamp(c.time)}${c.end === null ? '' : `～${stamp(c.end)}`} · ${c.category}：${c.text}`).join('\n') + '\n\n' : '暂无批注。\n\n';
+              for (const pickup of project.pickups.filter(x => x.versionId === v.id)) {
+                const audio = pickup.audios.find(a => a.id === pickup.selectedAudioId);
+                body += `### 定格配音补录\n\n- 关联批注：${pickup.commentId}\n- 替换区间：${stamp(pickup.time)}～${stamp(pickup.end)}\n- 补录稿：${pickup.text}\n- 当前录音：${audio ? `${audio.originalName}（${audio.filePath}）` : '尚未添加'}\n- 仅保存素材，不代表已合成或已处理批注。\n\n`;
+              }
             }
           }
           res.writeHead(200, { 'Content-Type': format === 'md' ? 'text/markdown; charset=utf-8' : 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="review.${format === 'md' ? 'md' : 'json'}"; filename*=UTF-8''${encodeURIComponent(project.title + '-审片反馈.' + (format === 'md' ? 'md' : 'json'))}`, 'Cache-Control': 'no-store' }); res.end(body); return;
         }
       }
+      if (['GET', 'HEAD'].includes(req.method) && parts[0] === 'pickup-audio') { streamFile(req, res, pickups.audioFile(parts[1]), 'audio/mp4'); return; }
       if (['GET', 'HEAD'].includes(req.method) && ['media', 'poster'].includes(parts[0])) {
         const state = read(); const version = state.projects.flatMap(p => p.versions).find(v => v.id === parts[1] && !v.removedAt);
         if (!version) throw fail(404, '视频版本不存在。');
@@ -364,7 +378,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
         if (!file) throw fail(404, '暂无封面。');
         streamFile(req, res, file, TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'); return;
       }
-      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/folder-import.js', '/video-manager.js', '/creative-standards.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
+      if (req.method === 'GET' && ['/', '/index.html', '/app.js', '/planning.js', '/folder-import.js', '/video-manager.js', '/pickups.js', '/pickups.css', '/creative-standards.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
         const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'");
