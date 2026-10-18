@@ -68,7 +68,7 @@ export function createPlanning(ctx) {
     } else {
       const local = d.recording?.base === (p.recording.updatedAt || '') ? d.recording : p.recording;
       const originalCount = project.versions.filter(v => v.stage === 3).length;
-      panel.innerHTML = `<div class="planning-heading"><div><span class="eyebrow">03 / RECORD YOUR STORY</span><h2>按提纲录，也可以自然发挥。</h2><p>讲错一句就停一下重录，原始素材完整保留。</p></div>${smallStatus(originalCount ? '已收到原始素材' : '等待录制上传', originalCount)}</div><div class="recording-grid"><div class="planning-card recording-outline"><div class="section-heading"><h3>录制时看这里</h3><button class="text-link" data-go="2">查看 / 修改提纲 ${icon('arrow')}</button></div>${p.outline.text ? `<p class="field-help">${stageComplete(project, 2) ? '已确认提纲' : '当前提纲尚未通过，可先回到第 2 步确认。'}</p><pre class="outline-reading">${esc(p.outline.text)}</pre>` : '<p class="field-help">还没有提纲。你也可以先录制自由表达，再把素材放进来整理。</p>'}</div><form id="recordingForm" class="planning-card"><h3>录制准备与备忘</h3><div class="recording-checks">${Object.entries({audio:'试录一小段，声音清楚',framing:'画面、光线和构图合适',facts:'数字、名称和事实已核对',materials:'配图、录屏等素材已准备'}).map(([key,label]) => `<label><input type="checkbox" data-check="${key}" ${local.checklist?.[key] ? 'checked' : ''}>${label}</label>`).join('')}</div><label class="field-label" for="recordingNotes">补充说明</label><textarea id="recordingNotes" rows="4" maxlength="10000" placeholder="哪一段重录了？哪些地方希望保留？还缺什么素材？">${esc(local.notes)}</textarea><div class="planning-actions"><button class="button secondary" type="submit">保存录制备忘</button><button class="button primary" type="button" data-plan="import-folder">${icon('upload')} 批量导入文件夹</button><button class="button secondary" type="button" data-plan="upload-original">添加单个视频</button></div><p class="field-help">粘贴文件夹路径，按拍摄时间批量引用。下方原片从早到晚排列，可逐段预览；原文件请保留在原处。</p>${originalCount ? '<p class="field-help">原片批注完成后，复制粗剪请求发到当前对话。进入粗剪审核用于查看结果，不会自动开始剪辑。</p><button class="button secondary" type="button" data-plan="request-cut">复制粗剪请求</button><button class="text-link recording-next" type="button" data-go="4">进入粗剪审核 ' + icon('arrow') + '</button>' : ''}</form></div>`;
+      panel.innerHTML = `<div class="planning-heading"><div><span class="eyebrow">03 / RECORD YOUR STORY</span><h2>按提纲录，也可以自然发挥。</h2><p>讲错一句就停一下重录，原始素材完整保留。</p></div>${smallStatus(originalCount ? '已收到原始素材' : '等待录制上传', originalCount)}</div><div class="recording-grid"><div class="planning-card recording-outline"><div class="section-heading"><h3>录制时看这里</h3><button class="text-link" data-go="2">查看 / 修改提纲 ${icon('arrow')}</button></div>${p.outline.text ? `<p class="field-help">${stageComplete(project, 2) ? '已确认提纲' : '当前提纲尚未通过，可先回到第 2 步确认。'}</p><pre class="outline-reading">${esc(p.outline.text)}</pre>` : '<p class="field-help">还没有提纲。你也可以先录制自由表达，再把素材放进来整理。</p>'}</div><form id="recordingForm" class="planning-card"><h3>录制准备与备忘</h3><div class="recording-checks">${Object.entries({audio:'试录一小段，声音清楚',framing:'画面、光线和构图合适',facts:'数字、名称和事实已核对',materials:'配图、录屏等素材已准备'}).map(([key,label]) => `<label><input type="checkbox" data-check="${key}" ${local.checklist?.[key] ? 'checked' : ''}>${label}</label>`).join('')}</div><label class="field-label" for="recordingNotes">补充说明</label><textarea id="recordingNotes" rows="4" maxlength="10000" placeholder="哪一段重录了？哪些地方希望保留？还缺什么素材？">${esc(local.notes)}</textarea><div class="planning-actions"><button class="button secondary" type="submit">保存录制备忘</button><button class="button primary" type="button" data-plan="import-folder">${icon('upload')} 批量导入文件夹</button><button class="button secondary" type="button" data-plan="upload-original">添加单个视频</button></div><p class="field-help">粘贴文件夹路径，按拍摄时间批量引用。下方原片从早到晚排列，可逐段预览；原文件请保留在原处。</p><p class="field-help">原片只需批注或移除。批注完成后，在预览区下方一键复制第 4 步粗剪请求。</p></form></div>`;
     }
     panel.querySelectorAll('input,textarea').forEach(n => n.addEventListener('input', stash));
     if ($('ideasForm')) $('ideasForm').onsubmit = safe(async e => { e.preventDefault(); await saveIdeas(); toast('想法已保存到作品。'); });
@@ -124,7 +124,7 @@ export function createPlanning(ctx) {
     const action = b.dataset.plan;
     if (action === 'request-topics') { await saveIdeas(); showHandoff('copy', 'topics', makeRequest('topics')); }
     if (action === 'request-outline') { stash(); showHandoff('copy', 'outline', makeRequest('outline')); }
-    if (action === 'request-cut') { await saveRecording(); showHandoff('copy', 'cut', makeRequest('cut')); }
+    if (action === 'request-cut') await copyCutRequest();
     if (action === 'import-topics') { if (!ctx.getProject().planning.ideas) throw new Error('先保存你的自由想法，再导入对应选题。'); showHandoff('import', 'topics'); }
     if (action === 'import-outline') showHandoff('import', 'outline');
     if (action === 'import-folder') { await saveRecording(); ctx.showFolderImport(); }
@@ -167,5 +167,18 @@ export function createPlanning(ctx) {
     else { const p = ctx.getProject().planning; await update({ action: 'outline', topicId: data?.topicId || p.selectedTopicId, topicRevision: data?.topicRevision ?? p.topicRevision, text: data?.text ?? raw }, 'outline'); }
     dialog.close(); toast('回复已保存，现在可以在作品中审核。');
   });
-  return { render, stash };
+  async function copyCutRequest() {
+    const projectId = ctx.getProject()?.id;
+    if (!ctx.getProject()?.versions.some(v => v.stage === 3)) throw new Error('先添加本期原片。');
+    await saveRecording();
+    if (ctx.getProject()?.id !== projectId) throw new Error('作品已变化，请回到对应作品后重新复制。');
+    const text = makeRequest('cut');
+    try { await navigator.clipboard.writeText(text); toast('粗剪请求已复制，粘贴到当前对话发送即可。'); return true; }
+    catch {
+      showHandoff('copy', 'cut', text); $('handoffText').focus(); $('handoffText').select();
+      $('handoffHelp').textContent = '浏览器未能直接复制。请按 Ctrl+C 复制选中的请求，再粘贴到当前对话发送。';
+      return false;
+    }
+  }
+  return { render, stash, copyCutRequest };
 }

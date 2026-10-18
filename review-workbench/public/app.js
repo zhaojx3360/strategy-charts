@@ -37,7 +37,7 @@ const statusNames = { pending: '待审核', approved: '已通过', changes_reque
 const stageNames = { 1: '想法与选题', 2: '口播提纲', 3: '录制与素材', 4: '粗剪审核', 5: '精剪审核', 6: '发布定稿' };
 let workspace, projectId, versionId, activeStage = 4, loadedVersionId = null;
 let filter = 'open', selectedCommentId = null, pendingSeek = null, importMode = 'file', importFile = null, reviewStatus = 'approved';
-let toastTimer, importing = false;
+let toastTimer, importing = false, copyingCut = false;
 const drafts = new Map();
 const video = $('video');
 
@@ -119,6 +119,10 @@ function selectStage(stage) {
 }
 function render() {
   const p = project(), v = version();
+  const sourceMode = activeStage === 3;
+  const originals = p?.versions.filter(item => item.stage === 3) || [];
+  const originalIds = new Set(originals.map(item => item.id));
+  const originalNotes = p?.comments.filter(c => originalIds.has(c.versionId)) || [];
   $('projectCount').textContent = workspace.projects.length;
   $('projectList').innerHTML = workspace.projects.map(item => `<button class="project-item${item.id === projectId ? ' active' : ''}" data-project="${item.id}" aria-current="${item.id === projectId ? 'page' : 'false'}"><span class="project-icon">${icon('film')}</span><span><strong>${esc(item.title)}</strong><small>${item.demo ? '演示项目' : item.versions.length + ' 个视频版本'} · ${dateText(item.updatedAt).slice(0, 5)}</small></span></button>`).join('');
   $('connection').textContent = '本地存储已连接';
@@ -136,8 +140,8 @@ function render() {
   planning.render(p, activeStage);
   $('currentVersion').textContent = v?.label || `${stageNames[activeStage]} · 尚未添加视频`;
   $('videoDimensions').textContent = v?.width ? `${v.width} × ${v.height}` : '';
-  $('reviewBadge').textContent = v ? statusNames[v.review.status] : '等待素材';
-  $('reviewBadge').className = `status-badge ${v?.review.status || 'pending'}`;
+  $('reviewBadge').textContent = v?.stage === 3 ? '原始素材' : v ? statusNames[v.review.status] : '等待素材';
+  $('reviewBadge').className = `status-badge ${v?.stage === 3 ? 'source' : v?.review.status || 'pending'}`;
   $('emptyVideo').hidden = Boolean(v);
   $('playerControls').hidden = !v;
   $('bigPlay').hidden = !v;
@@ -154,10 +158,22 @@ function render() {
   $('restoreVideosTop').hidden = !p?.removedVersions?.length;
   $('removeCurrentVideo').disabled = !v;
   $('removedVideoCount').textContent = p?.removedVersions?.length ? ` · 已移除 ${p.removedVersions.length}` : '';
-  $('versionList').innerHTML = videoOrder(p?.versions || []).map(item => `<button class="version-card${item.id === versionId ? ' active' : ''}" data-version="${item.id}" aria-pressed="${item.id === versionId}"><div class="version-thumb">${item.posterUrl ? `<img src="${item.posterUrl}" alt="${esc(item.label)}预览" loading="lazy">` : ''}<span class="duration">${time(item.duration)}</span>${item.id === versionId ? `<span class="selected-check">${icon('check')}</span>` : ''}</div><div class="version-caption"><strong>${esc(item.label)}</strong><small><span class="tiny-dot" style="background:${item.review.status === 'approved' ? 'var(--green)' : '#818b99'}"></span>${statusNames[item.review.status]}<span>·</span>${stageNames[item.stage]}</small>${item.stage === 3 ? `<small class="material-time" title="${esc(materialTime(item)?.timeLabel || '旧素材未记录拍摄时间')}">${materialTime(item) ? esc(materialDate(materialTime(item).sortAt)) + (materialTime(item).timeSource === 'modified' ? ' · 备用时间' : '') : '未记录拍摄时间'}</small>` : ''}</div></button>`).join('') + (p ? `<button class="version-add" id="addVersionCard">${icon('plus')}添加版本</button>` : '');
+  $('versionList').innerHTML = videoOrder(p?.versions || []).map(item => `<button class="version-card${item.id === versionId ? ' active' : ''}" data-version="${item.id}" aria-pressed="${item.id === versionId}"><div class="version-thumb">${item.posterUrl ? `<img src="${item.posterUrl}" alt="${esc(item.label)}预览" loading="lazy">` : ''}<span class="duration">${time(item.duration)}</span>${item.id === versionId ? `<span class="selected-check">${icon('check')}</span>` : ''}</div><div class="version-caption"><strong>${esc(item.label)}</strong><small><span class="tiny-dot" style="background:${item.review.status === 'approved' ? 'var(--green)' : '#818b99'}"></span>${item.stage === 3 ? '原片' : statusNames[item.review.status]}<span>·</span>${stageNames[item.stage]}</small>${item.stage === 3 ? `<small class="material-time" title="${esc(materialTime(item)?.timeLabel || '旧素材未记录拍摄时间')}">${materialTime(item) ? esc(materialDate(materialTime(item).sortAt)) + (materialTime(item).timeSource === 'modified' ? ' · 备用时间' : '') : '未记录拍摄时间'}</small>` : ''}</div></button>`).join('') + (p ? `<button class="version-add" id="addVersionCard">${icon('plus')}添加版本</button>` : '');
   const open = p?.comments.filter(c => c.versionId === versionId && !c.resolved).length || 0;
   $('reviewSummaryTitle').textContent = !v ? '这一阶段还没有视频' : v.review.status === 'approved' ? `${stageNames[v.stage]}已通过` : v.review.status === 'changes_requested' ? '等待下一轮修改' : `正在审核：${v.label}`;
   $('reviewSummaryText').textContent = !v ? '添加对应的视频版本，再开始预览与审核。' : v.review.note || (open ? `还有 ${open} 条批注待处理，完成后可通过本阶段。` : '确认内容与视听效果后，可以通过本阶段。');
+  $('reviewButtons').hidden = sourceMode;
+  $('sourceActions').hidden = !sourceMode;
+  $('roughCopyStatus').hidden = true;
+  $('reviewSummary').classList.toggle('source-handoff', sourceMode);
+  $('reviewSummaryIcon').innerHTML = icon(sourceMode ? 'comment' : 'shield');
+  $('notesEyebrow').textContent = sourceMode ? 'SOURCE NOTES' : 'REVIEW NOTES';
+  $('notesHeading').textContent = sourceMode ? '素材批注' : '审片批注';
+  if (sourceMode) {
+    $('reviewSummaryTitle').textContent = '批注完成，交给第 4 步粗剪';
+    $('reviewSummaryText').textContent = originals.length ? `${originals.length} 段原片 · ${originalNotes.length} 条批注。复制请求，粘贴到当前对话发送。` : '添加原片并留下批注后，在这里复制粗剪请求。';
+  }
+  $('copyRoughRequest').disabled = copyingCut || !originals.length;
   $('approveStage').disabled = !v || v.review.status === 'approved';
   $('approveStage').innerHTML = icon('check') + (v?.review.status === 'approved' ? '已通过审核' : '通过本阶段');
   $('requestChanges').disabled = !v;
@@ -176,7 +192,7 @@ function renderComments() {
   const visible = comments.filter(c => filter === 'all' || (filter === 'resolved' ? c.resolved : !c.resolved)).sort((a, b) => a.time - b.time);
   $('commentList').innerHTML = visible.map(c => {
     const v = p.versions.find(v => v.id === c.versionId);
-    return `<article class="comment-card${c.resolved ? ' resolved' : ''}${c.id === selectedCommentId ? ' selected' : ''}" data-comment-card="${c.id}"><div class="comment-card-top"><span class="avatar">${c.demo ? '例' : '我'}</span><span class="comment-author">${c.demo ? '演示批注' : '我的批注'}</span><span class="comment-date">${dateText(c.createdAt)}</span></div><button class="time-pill" data-jump="${c.id}" aria-label="跳到${esc(v?.label)} ${time(c.time, true)}">${icon('pin')}${time(c.time, true)}${c.end == null ? '' : ' — ' + time(c.end, true)}</button>${$('allVersions').checked ? `<span class="comment-version">${esc(v?.label)}</span>` : ''}<p>${esc(c.text)}</p><div class="comment-card-bottom"><span class="category-tag">${esc(c.category)}</span><button class="resolve-button${c.resolved ? ' done' : ''}" data-resolve="${c.id}" aria-label="${c.resolved ? '重新标为待处理' : '标为已处理'}：${esc(c.text.slice(0, 20))}">${icon(c.resolved ? 'check' : 'circle')}${c.resolved ? '已处理 · 撤回' : '标为已处理'}</button></div></article>`;
+    return `<article class="comment-card${c.resolved ? ' resolved' : ''}${c.id === selectedCommentId ? ' selected' : ''}" data-comment-card="${c.id}"><div class="comment-card-top"><span class="avatar">${c.demo ? '例' : '我'}</span><span class="comment-author">${c.demo ? '演示批注' : '我的批注'}</span><span class="comment-date">${dateText(c.createdAt)}</span></div><button class="time-pill" data-jump="${c.id}" aria-label="跳到${esc(v?.label)} ${time(c.time, true)}">${icon('pin')}${time(c.time, true)}${c.end == null ? '' : ' — ' + time(c.end, true)}</button>${$('allVersions').checked ? `<span class="comment-version">${esc(v?.label)}</span>` : ''}<p>${esc(c.text)}</p><div class="comment-card-bottom"><span class="category-tag">${esc(c.category)}</span>${v?.stage === 3 ? `<span class="source-note-state">${c.resolved ? '已落实' : '粗剪时处理'}</span>` : `<button class="resolve-button${c.resolved ? ' done' : ''}" data-resolve="${c.id}" aria-label="${c.resolved ? '重新标为待处理' : '标为已处理'}：${esc(c.text.slice(0, 20))}">${icon(c.resolved ? 'check' : 'circle')}${c.resolved ? '已处理 · 撤回' : '标为已处理'}</button>`}</div></article>`;
   }).join('') || `<div class="comments-empty">${icon(filter === 'resolved' ? 'check' : 'comment')}<strong>${filter === 'resolved' ? '暂时没有已处理批注' : filter === 'all' ? '这里还没有批注' : '没有待处理批注'}</strong><p>${version() ? '播放视频，在想调整的位置暂停，写下你的意见。' : '添加视频后，就可以在这里记录具体修改意见。'}</p></div>`;
   const v = version();
   $('commentMarkers').innerHTML = v?.duration ? p.comments.filter(c => c.versionId === v.id).map(c => `<button class="comment-marker${c.resolved ? ' resolved' : ''}" style="left:${Math.min(100, c.time / v.duration * 100)}%" data-jump="${c.id}" title="${time(c.time, true)} ${esc(c.text)}" aria-label="批注 ${time(c.time, true)}"></button>`).join('') : '';
@@ -201,6 +217,7 @@ function showImport() {
   if (!project()) { $('projectDialog').showModal(); return; }
   $('importForm').reset(); importFile = null; $('fileLabel').textContent = '点击选择，或拖入视频文件';
   $('importStage').value = String(activeStage >= 3 ? activeStage : 3);
+  $('importNotice').textContent = Number($('importStage').value) === 3 ? '原片添加后即可批注，批注完成后直接交给粗剪。' : '剪辑版添加后等待审核。';
   $('importProgress').hidden = true; setImportMode('file'); $('importDialog').showModal();
 }
 function setImportMode(mode) {
@@ -221,7 +238,7 @@ function uploadFile(url, file) {
   });
 }
 function showReview(status) {
-  const v = version(); if (!v) return;
+  const v = version(); if (!v || v.stage === 3) return;
   const remaining = project().comments.filter(c => c.versionId === v.id && !c.resolved).length;
   if (status === 'approved' && remaining) { toast(`还有 ${remaining} 条待处理批注，请处理后再通过。`, true); return; }
   video.pause(); reviewStatus = status; $('reviewNote').value = '';
@@ -272,6 +289,7 @@ $('manageVideos').onclick = () => { video.pause(); videoManager.show(); };
 $('restoreVideosTop').onclick = () => { video.pause(); videoManager.show(null, true); };
 $('removeCurrentVideo').onclick = () => { video.pause(); videoManager.show(versionId); };
 $('videoFile').onchange = event => chooseFile(event.target.files[0]);
+$('importStage').onchange = () => { $('importNotice').textContent = Number($('importStage').value) === 3 ? '原片添加后即可批注，批注完成后直接交给粗剪。' : '剪辑版添加后等待审核。'; };
 for (const name of ['dragenter', 'dragover']) $('dropZone').addEventListener(name, event => { event.preventDefault(); $('dropZone').classList.add('dragging'); });
 for (const name of ['dragleave', 'drop']) $('dropZone').addEventListener(name, event => { event.preventDefault(); $('dropZone').classList.remove('dragging'); if (name === 'drop') chooseFile(event.dataTransfer.files[0]); });
 $('importDialog').addEventListener('cancel', event => { if (importing) event.preventDefault(); });
@@ -283,7 +301,7 @@ $('importForm').onsubmit = safe(async event => {
   try {
     const values = { stage: Number($('importStage').value), label: $('importLabel').value.trim() };
     const result = importMode === 'path' ? await api(`/api/projects/${projectId}/import-path`, { method: 'POST', body: JSON.stringify({ ...values, filePath: $('videoPath').value.trim().replace(/^"|"$/g, '') }) }) : await uploadFile(`/api/projects/${projectId}/upload?${new URLSearchParams({ ...values, fileName: importFile.name })}`, importFile);
-    stashDraft(); await loadWorkspace({ versionId: result.version.id }); restoreDraft(); $('importDialog').close(); toast('视频版本已添加，等待本轮审核。');
+    stashDraft(); await loadWorkspace({ versionId: result.version.id }); restoreDraft(); $('importDialog').close(); toast(result.version.stage === 3 ? '原片已添加，可以开始批注。' : '视频版本已添加，等待本轮审核。');
   } finally { importing = false; $('importSubmit').disabled = false; $('importProgress').hidden = true; }
 });
 $('commentText').addEventListener('focus', () => { video.pause(); if (!$('commentText').value && !drafts.has(versionId)) $('commentTime').value = time(video.currentTime, true); });
@@ -326,6 +344,15 @@ function updateTime() {
 video.addEventListener('timeupdate', updateTime);
 video.addEventListener('error', () => { if (version() && video.getAttribute('src')) { $('videoError').hidden = false; $('bigPlay').hidden = true; } });
 $('requestChanges').onclick = () => showReview('changes_requested'); $('approveStage').onclick = () => showReview('approved');
+$('copyRoughRequest').onclick = safe(async () => {
+  if (copyingCut) return;
+  if ($('commentText').value.trim()) throw new Error('当前批注还未保存，请先点击保存批注。');
+  copyingCut = true; $('copyRoughRequest').disabled = true; video.pause();
+  try {
+    const copied = await planning.copyCutRequest();
+    if (copied) { $('roughCopyStatus').hidden = false; $('roughCopyStatus').textContent = '已复制。粘贴到当前对话发送后，开始制作粗剪。'; }
+  } finally { copyingCut = false; $('copyRoughRequest').disabled = !project()?.versions.some(v => v.stage === 3); }
+});
 $('reviewForm').onsubmit = safe(async event => {
   event.preventDefault(); const submit = event.submitter; submit.disabled = true;
   try { await api(`/api/projects/${projectId}/review`, { method: 'POST', body: JSON.stringify({ versionId, status: reviewStatus, note: $('reviewNote').value }) }); await loadWorkspace({ keepEmptyStage: true }); $('reviewDialog').close(); toast(reviewStatus === 'approved' ? '这一版已通过审核，记录已保存。' : '修改结论已保存，可在对话中继续处理。'); }

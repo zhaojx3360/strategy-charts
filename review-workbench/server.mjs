@@ -172,7 +172,7 @@ export function createWorkbench({ dataDir = process.env.REVIEW_DATA_DIR || 'C:/d
     const url = new URL(req.url, `http://${host}`);
     const parts = url.pathname.split('/').filter(Boolean);
     try {
-      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.4.0', dataDir }); return; }
+      if (req.method === 'GET' && url.pathname === '/api/health') { send(res, 200, { app: 'local-review-workbench', version: '1.5.0', dataDir }); return; }
       if (req.method === 'GET' && url.pathname === '/api/workspace') { send(res, 200, publicState(read())); return; }
       if (req.method === 'POST' && url.pathname === '/api/projects') {
         const body = await jsonBody(req);
